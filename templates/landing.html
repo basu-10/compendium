@@ -1,0 +1,177 @@
+{% extends "public_base.html" %}
+
+{% block title %}Compendium - Structured research, backed by evidence{% endblock %}
+{% block description %}Compendium turns scattered sources into structured, evidence-backed arguments. Organise domains, break them into topics, and attach the proof behind every claim.{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="public-container hero-inner">
+        <span class="eyebrow">Evidence mapping for serious research</span>
+        <h1 class="hero-title">Every claim you make,<br>traceable to its source.</h1>
+        <p class="hero-sub">
+            Compendium is where scattered reading becomes a structured argument. Group your work into
+            domains, break them into topics, write the claims that matter, and attach the documents,
+            data, and links that back each one up.
+        </p>
+        <div class="hero-actions">
+            <a href="{{ url_for('all_domains') }}" class="btn-cta btn-cta-lg">Browse all domains</a>
+            <a href="{{ url_for('about') }}" class="btn-ghost btn-ghost-lg">How it works</a>
+        </div>
+
+        <div class="hero-stats">
+            <div class="hero-stat">
+                <span class="hero-stat-value">{{ stats.domain_count }}</span>
+                <span class="hero-stat-label">Domains</span>
+            </div>
+            <div class="hero-stat">
+                <span class="hero-stat-value">{{ stats.topic_count }}</span>
+                <span class="hero-stat-label">Topics</span>
+            </div>
+            <div class="hero-stat">
+                <span class="hero-stat-value">{{ stats.statement_count }}</span>
+                <span class="hero-stat-label">Claims</span>
+            </div>
+            <div class="hero-stat">
+                <span class="hero-stat-value">{{ stats.attachment_count }}</span>
+                <span class="hero-stat-label">Evidence items</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="public-container">
+        <div class="section-intro">
+            <span class="eyebrow">The problem</span>
+            <h2 class="section-title">Research falls apart between the tabs</h2>
+            <p class="section-lead">
+                Notes live in one app, PDFs in a folder, the spreadsheet that proves the point in
+                another. By the time you write it up, the reasoning is there but the evidence trail
+                is gone. Compendium keeps the two together from the start.
+            </p>
+        </div>
+
+        <div class="feature-grid">
+            <article class="feature-card">
+                <div class="feature-icon">&#9632;</div>
+                <h3>Organise by domain</h3>
+                <p>
+                    Start with the broad areas you work in &mdash; a field, a market, a body of
+                    literature. Each domain is a home for everything you learn about it.
+                </p>
+            </article>
+            <article class="feature-card">
+                <div class="feature-icon">&#9633;</div>
+                <h3>Break it into topics</h3>
+                <p>
+                    Topics are the questions you're actually trying to answer. They keep a domain
+                    from becoming another folder you never open.
+                </p>
+            </article>
+            <article class="feature-card">
+                <div class="feature-icon">&#9679;</div>
+                <h3>State the claim</h3>
+                <p>
+                    Write what you believe to be true as a plain statement. Claims are first-class,
+                    not buried in a paragraph of notes.
+                </p>
+            </article>
+            <article class="feature-card">
+                <div class="feature-icon">&#9678;</div>
+                <h3>Attach the proof</h3>
+                <p>
+                    Hang links, documents, images, video, tables, and long-form notes off each
+                    claim. Open any statement and see exactly what supports it.
+                </p>
+            </article>
+            <article class="feature-card">
+                <div class="feature-icon">&#9635;</div>
+                <h3>Side-by-side review</h3>
+                <p>
+                    Claims on the left, their evidence on the right. Click a statement and the
+                    evidence pane follows, so you never lose your place.
+                </p>
+            </article>
+            <article class="feature-card">
+                <div class="feature-icon">&#9650;</div>
+                <h3>Built to revisit</h3>
+                <p>
+                    Come back in six months and the argument still holds up, because the reasoning
+                    and the sources were never separated.
+                </p>
+            </article>
+        </div>
+    </div>
+</section>
+
+<section class="section section-alt">
+    <div class="public-container">
+        <div class="section-intro">
+            <span class="eyebrow">How it works</span>
+            <h2 class="section-title">Four levels, one thread</h2>
+        </div>
+        <ol class="steps">
+            <li class="step">
+                <span class="step-num">1</span>
+                <div class="step-body">
+                    <h4>Create a domain</h4>
+                    <p>The widest container &mdash; the subject you keep coming back to.</p>
+                </div>
+            </li>
+            <li class="step">
+                <span class="step-num">2</span>
+                <div class="step-body">
+                    <h4>Add topics</h4>
+                    <p>Narrow the domain into specific questions worth investigating.</p>
+                </div>
+            </li>
+            <li class="step">
+                <span class="step-num">3</span>
+                <div class="step-body">
+                    <h4>Write statements</h4>
+                    <p>Record each claim, finding, or conclusion in its own right.</p>
+                </div>
+            </li>
+            <li class="step">
+                <span class="step-num">4</span>
+                <div class="step-body">
+                    <h4>Attach evidence</h4>
+                    <p>Back every statement with the sources that justify it.</p>
+                </div>
+            </li>
+        </ol>
+    </div>
+</section>
+
+{% if featured %}
+<section class="section">
+    <div class="public-container">
+        <div class="section-intro">
+            <span class="eyebrow">Inside Compendium</span>
+            <h2 class="section-title">Explore what's already mapped</h2>
+            <p class="section-lead">A look at the domains currently in this workspace.</p>
+        </div>
+        <div class="featured-grid">
+            {% for d in featured %}
+            <a href="{{ url_for('domain', domain_id=d.id) }}" class="featured-card">
+                <h3>{{ d.name }}</h3>
+                <p>{{ d.description or 'No description yet.' }}</p>
+                <span class="featured-meta">{{ d.topic_count }} topic{{ '' if d.topic_count == 1 else 's' }}</span>
+            </a>
+            {% endfor %}
+        </div>
+        <div class="featured-footer">
+            <a href="{{ url_for('all_domains') }}" class="btn-ghost">View all domains</a>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<section class="cta-band">
+    <div class="public-container cta-inner">
+        <h2>Stop losing the trail.</h2>
+        <p>Open Compendium and start mapping what you actually know.</p>
+        <a href="{{ url_for('all_domains') }}" class="btn-cta btn-cta-lg btn-cta-invert">Get started</a>
+    </div>
+</section>
+{% endblock %}

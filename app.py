@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, sen
 import sqlite3
 import os
 import uuid
+from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = 'compendium-secret-key-change-in-production'
@@ -80,6 +81,42 @@ def preview_text(text, limit=PREVIEW_LENGTH):
     return value[:limit].rstrip() + '...'
 
 
+# Placeholder identity used by the sidebar and the dashboard profile header
+# until a real auth layer exists. Defined once so the two render sites cannot
+# drift apart -- they appear on screen together on /dashboard.
+PLACEHOLDER_USER = {
+    'name': 'Alex Rivera',
+    'initials': 'AR',
+    'role': 'Researcher',
+    'email': 'alex@example.com',
+}
+
+
+@app.context_processor
+def inject_globals():
+    """Values every template can rely on (e.g. the footer copyright year)."""
+    return {
+        'current_year': datetime.now().year,
+        'current_user': PLACEHOLDER_USER,
+    }
+
+
+def get_global_stats(conn):
+    """Corpus-wide totals shared by the landing page and the dashboard.
+
+    Both surfaces present these as the same "how big is this corpus" figure,
+    so they must be computed in one place: if the definition ever gains a
+    filter, the two pages would otherwise silently disagree.
+    """
+    return conn.execute('''
+        SELECT
+            (SELECT COUNT(*) FROM domains) AS domain_count,
+            (SELECT COUNT(*) FROM topics) AS topic_count,
+            (SELECT COUNT(*) FROM statements) AS statement_count,
+            (SELECT COUNT(*) FROM attachments) AS attachment_count
+    ''').fetchone()
+
+
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -145,6 +182,10 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_attachments_statement_id ON attachments (statement_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_statements_topic_id ON statements (topic_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_topics_domain_id ON topics (domain_id)')
+    # Backs the dashboard's "most recent" lists, which order by creation time
+    # and take only the newest handful of rows.
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_attachments_created_at ON attachments (created_at DESC)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_topics_created_at ON topics (created_at DESC)')
 
     conn.commit()
     conn.close()
@@ -216,6 +257,28 @@ def _migrate_attachments_table(conn, cursor):
 
 @app.route('/')
 def index():
+    """Public marketing landing page."""
+    conn = get_db()
+    stats = get_global_stats(conn)
+    featured = conn.execute('''
+        SELECT d.id, d.name, d.description, COUNT(t.id) as topic_count
+        FROM domains d
+        LEFT JOIN topics t ON d.id = t.domain_id
+        GROUP BY d.id
+        ORDER BY topic_count DESC, d.name
+        LIMIT 3
+    ''').fetchall()
+    conn.close()
+    return render_template('landing.html', stats=stats, featured=featured)
+
+
+@app.route('/about')
+def about():
+    return render_template('about.html')
+
+
+@app.route('/alldomains')
+def all_domains():
     conn = get_db()
     domains = conn.execute('''
         SELECT d.*, COUNT(t.id) as topic_count 
@@ -225,7 +288,75 @@ def index():
         ORDER BY d.name
     ''').fetchall()
     conn.close()
-    return render_template('main.html', domains=domains)
+    return render_template('alldomains.html', domains=domains)
+
+
+@app.route('/dashboard')
+def dashboard():
+    """User profile / dashboard.
+
+    There is no auth layer yet, so the identity block is a placeholder while
+    every figure below it is a real aggregate over the current database.
+    """
+    conn = get_db()
+    stats = get_global_stats(conn)
+    recent_topics = conn.execute('''
+        SELECT t.id, t.name, d.name AS domain_name,
+               COUNT(DISTINCT s.id) AS statement_count
+        FROM topics t
+        JOIN domains d ON t.domain_id = d.id
+        LEFT JOIN statements s ON s.topic_id = t.id
+        GROUP BY t.id
+        ORDER BY t.created_at DESC
+        LIMIT 6
+    ''').fetchall()
+    # The LIMIT is applied before the joins so only six attachment rows are
+    # ever joined and sorted; ordering after the join would force a full scan
+    # of `attachments` plus a temp b-tree sort on every dashboard load.
+    recent_evidence = conn.execute('''
+        SELECT a.title, a.type, a.filename,
+               t.id AS topic_id, t.name AS topic_name
+        FROM (
+            SELECT id, statement_id, title, type, filename, created_at
+            FROM attachments
+            ORDER BY created_at DESC
+            LIMIT 6
+        ) a
+        JOIN statements s ON a.statement_id = s.id
+        JOIN topics t ON s.topic_id = t.id
+        ORDER BY a.created_at DESC
+    ''').fetchall()
+    # Statements and attachments are pre-aggregated per topic so the deepest
+    # table is not fanned out across the whole join; counting DISTINCT over
+    # the full cross-product made this scale with total attachments rather
+    # than with the handful of domains actually displayed.
+    domain_breakdown = conn.execute('''
+        SELECT d.id, d.name,
+               COUNT(DISTINCT t.id) AS topic_count,
+               COALESCE(SUM(ts.statement_count), 0) AS statement_count,
+               COALESCE(SUM(ts.attachment_count), 0) AS attachment_count
+        FROM domains d
+        LEFT JOIN topics t ON t.domain_id = d.id
+        LEFT JOIN (
+            SELECT s.topic_id,
+                   COUNT(DISTINCT s.id) AS statement_count,
+                   COUNT(a.id) AS attachment_count
+            FROM statements s
+            LEFT JOIN attachments a ON a.statement_id = s.id
+            GROUP BY s.topic_id
+        ) ts ON ts.topic_id = t.id
+        GROUP BY d.id
+        ORDER BY topic_count DESC, d.name
+    ''').fetchall()
+    conn.close()
+    return render_template(
+        'dashboard.html',
+        stats=stats,
+        recent_topics=recent_topics,
+        recent_evidence=recent_evidence,
+        domain_breakdown=domain_breakdown,
+        asset_kind=asset_kind,
+    )
 
 @app.route('/domain/<int:domain_id>')
 def domain(domain_id):
@@ -245,7 +376,7 @@ def domain(domain_id):
     conn.close()
     if not domain:
         flash('Domain not found')
-        return redirect(url_for('index'))
+        return redirect(url_for('all_domains'))
     return render_template('domain.html', domain=domain, topics=topic_rows)
 
 @app.route('/topic/<int:topic_id>')
@@ -291,7 +422,7 @@ def topic(topic_id):
     conn.close()
     if not topic:
         flash('Topic not found')
-        return redirect(url_for('index'))
+        return redirect(url_for('all_domains'))
     return render_template(
         'topic.html',
         topic=topic,
@@ -310,7 +441,7 @@ def create_topic():
     description = request.form.get('description', '').strip()
     if not domain_id or not name:
         flash('Domain and topic name are required')
-        return redirect(request.referrer or url_for('index'))
+        return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
     conn.execute('INSERT INTO topics (domain_id, name, description) VALUES (?, ?, ?)', (domain_id, name, description))
     conn.commit()
@@ -324,7 +455,7 @@ def create_statement():
     text = request.form.get('text', '').strip()
     if not topic_id or not text:
         flash('Statement text is required')
-        return redirect(request.referrer or url_for('index'))
+        return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
     conn.execute('INSERT INTO statements (topic_id, text) VALUES (?, ?)', (topic_id, text))
     conn.commit()
@@ -342,7 +473,7 @@ def create_attachment():
     
     if not statement_id or not title:
         flash('Statement and title are required')
-        return redirect(request.referrer or url_for('index'))
+        return redirect(request.referrer or url_for('all_domains'))
     
     if att_type not in ASSET_TYPES:
         att_type = 'link'
@@ -350,7 +481,7 @@ def create_attachment():
         ext = _upload_extension(att_type, file.filename)
         if ext is None:
             flash('That file type is not allowed for this asset type')
-            return redirect(request.referrer or url_for('index'))
+            return redirect(request.referrer or url_for('all_domains'))
         filename = f"{uuid.uuid4().hex}.{ext}"
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
@@ -360,7 +491,7 @@ def create_attachment():
         # a hosted spreadsheet). Only reject when there is no file AND no URL,
         # which would otherwise store a row that renders as /uploads/<empty>.
         flash('A file or URL is required for this asset type')
-        return redirect(request.referrer or url_for('index'))
+        return redirect(request.referrer or url_for('all_domains'))
     
     conn = get_db()
     try:
@@ -371,9 +502,9 @@ def create_attachment():
         conn.rollback()
         conn.close()
         flash('Could not save this attachment')
-        return redirect(request.referrer or url_for('index'))
+        return redirect(request.referrer or url_for('all_domains'))
     conn.close()
-    return redirect(request.referrer or url_for('index'))
+    return redirect(request.referrer or url_for('all_domains'))
 
 @app.route('/update_statement', methods=['POST'])
 def update_statement():
@@ -381,12 +512,12 @@ def update_statement():
     text = request.form.get('text', '').strip()
     if not statement_id or not text:
         flash('Statement text is required')
-        return redirect(request.referrer or url_for('index'))
+        return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
     conn.execute('UPDATE statements SET text = ? WHERE id = ?', (text, statement_id))
     conn.commit()
     conn.close()
-    return redirect(request.referrer or url_for('index'))
+    return redirect(request.referrer or url_for('all_domains'))
 
 @app.route('/delete_statement/<int:statement_id>', methods=['POST'])
 def delete_statement(statement_id):
@@ -401,7 +532,7 @@ def delete_statement(statement_id):
     conn.close()
     for row in rows:
         _remove_upload(row['filename'])
-    return redirect(request.referrer or url_for('index'))
+    return redirect(request.referrer or url_for('all_domains'))
 
 @app.route('/update_attachment', methods=['POST'])
 def update_attachment():
@@ -413,14 +544,14 @@ def update_attachment():
 
     if not attachment_id or not title:
         flash('Attachment title is required')
-        return redirect(request.referrer or url_for('index'))
+        return redirect(request.referrer or url_for('all_domains'))
 
     conn = get_db()
     existing = conn.execute('SELECT * FROM attachments WHERE id = ?', (attachment_id,)).fetchone()
     if not existing:
         conn.close()
         flash('Attachment not found')
-        return redirect(request.referrer or url_for('index'))
+        return redirect(request.referrer or url_for('all_domains'))
 
     if att_type not in ASSET_TYPES:
         att_type = existing['type']
@@ -433,7 +564,7 @@ def update_attachment():
         if ext is None:
             conn.close()
             flash('That file type is not allowed for this asset type')
-            return redirect(request.referrer or url_for('index'))
+            return redirect(request.referrer or url_for('all_domains'))
         filename = f"{uuid.uuid4().hex}.{ext}"
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
@@ -444,7 +575,7 @@ def update_attachment():
         if not content:
             conn.close()
             flash('Content is required for this asset type')
-            return redirect(request.referrer or url_for('index'))
+            return redirect(request.referrer or url_for('all_domains'))
     elif old_filename:
         # File-backed type keeping its existing file. The edit form still
         # submits the (hidden) URL field, so never trust it to replace the
@@ -462,7 +593,7 @@ def update_attachment():
         # corrupt row that renders as /uploads/<empty>.
         conn.close()
         flash('A file or URL is required for this asset type')
-        return redirect(request.referrer or url_for('index'))
+        return redirect(request.referrer or url_for('all_domains'))
 
     try:
         conn.execute(
@@ -474,13 +605,13 @@ def update_attachment():
         conn.rollback()
         conn.close()
         flash('Could not save this attachment')
-        return redirect(request.referrer or url_for('index'))
+        return redirect(request.referrer or url_for('all_domains'))
     conn.close()
 
     if old_filename and old_filename != filename:
         _remove_upload(old_filename)
 
-    return redirect(request.referrer or url_for('index'))
+    return redirect(request.referrer or url_for('all_domains'))
 
 
 @app.route('/delete_attachment/<int:attachment_id>', methods=['POST'])
@@ -492,7 +623,7 @@ def delete_attachment(attachment_id):
     conn.close()
     if row and row['filename']:
         _remove_upload(row['filename'])
-    return redirect(request.referrer or url_for('index'))
+    return redirect(request.referrer or url_for('all_domains'))
 
 
 @app.route('/attachment/<int:attachment_id>')
@@ -540,12 +671,12 @@ def update_topic():
     description = request.form.get('description', '').strip()
     if not topic_id or not name:
         flash('Topic name is required')
-        return redirect(request.referrer or url_for('index'))
+        return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
     conn.execute('UPDATE topics SET name = ?, description = ? WHERE id = ?', (name, description, topic_id))
     conn.commit()
     conn.close()
-    return redirect(request.referrer or url_for('index'))
+    return redirect(request.referrer or url_for('all_domains'))
 
 @app.route('/delete_topic/<int:topic_id>', methods=['POST'])
 def delete_topic(topic_id):
@@ -561,7 +692,7 @@ def delete_topic(topic_id):
     conn.close()
     for row in rows:
         _remove_upload(row['filename'])
-    return redirect(request.referrer or url_for('index'))
+    return redirect(request.referrer or url_for('all_domains'))
 
 @app.route('/update_domain', methods=['POST'])
 def update_domain():
@@ -570,12 +701,12 @@ def update_domain():
     description = request.form.get('description', '').strip()
     if not domain_id or not name:
         flash('Domain name is required')
-        return redirect(request.referrer or url_for('index'))
+        return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
     conn.execute('UPDATE domains SET name = ?, description = ? WHERE id = ?', (name, description, domain_id))
     conn.commit()
     conn.close()
-    return redirect(request.referrer or url_for('index'))
+    return redirect(request.referrer or url_for('all_domains'))
 
 @app.route('/delete_domain/<int:domain_id>', methods=['POST'])
 def delete_domain(domain_id):
@@ -594,7 +725,7 @@ def delete_domain(domain_id):
     conn.close()
     for row in rows:
         _remove_upload(row['filename'])
-    return redirect(request.referrer or url_for('index'))
+    return redirect(request.referrer or url_for('all_domains'))
 
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):

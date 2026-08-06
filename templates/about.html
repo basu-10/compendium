@@ -1,0 +1,110 @@
+{% extends "public_base.html" %}
+
+{% block title %}About - Compendium{% endblock %}
+{% block description %}Why Compendium exists, the model behind it, and the principles that shape how it works.{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <div class="public-container">
+        <span class="eyebrow">About</span>
+        <h1 class="hero-title hero-title-sm">Research tools forgot about evidence.</h1>
+        <p class="hero-sub">
+            Most note apps are good at capturing text and bad at capturing why you believed it.
+            Compendium is built the other way around.
+        </p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="public-container prose-layout">
+        <div class="prose">
+            <h2>Why it exists</h2>
+            <p>
+                Anyone who researches seriously runs into the same wall. You read widely, take notes,
+                and form a view. Months later you need to defend that view &mdash; and you can no
+                longer reconstruct which paper, report, or dataset convinced you. The conclusion
+                survived; the justification didn't.
+            </p>
+            <p>
+                The usual tools encourage this. A document is a flat wall of prose. A folder is a pile
+                of files with no argument attached. Neither knows the difference between something you
+                claimed and something that proves it.
+            </p>
+            <p>
+                Compendium treats that relationship as the important part. A claim is a real object.
+                Evidence attaches to it. The link between them is the thing being stored, not an
+                afterthought you hope to remember.
+            </p>
+
+            <h2>The model</h2>
+            <p>
+                Everything is built on four nested levels, deliberately kept few enough to hold in
+                your head:
+            </p>
+            <ul class="prose-list">
+                <li><strong>Domains</strong> &mdash; the broad subject areas you work in.</li>
+                <li><strong>Topics</strong> &mdash; the specific questions inside a domain.</li>
+                <li><strong>Statements</strong> &mdash; individual claims, findings, or conclusions.</li>
+                <li><strong>Evidence</strong> &mdash; the links, documents, images, video, tables, and notes supporting each statement.</li>
+            </ul>
+            <p>
+                That hierarchy is the whole system. There's no tagging scheme to invent and no
+                methodology to adopt before you can write your first note.
+            </p>
+
+            <h2>Principles</h2>
+            <p>
+                <strong>Evidence over prose.</strong> A claim without support is visibly incomplete.
+                The interface makes that obvious rather than hiding it.
+            </p>
+            <p>
+                <strong>Structure you can see.</strong> Claims and their evidence sit side by side.
+                You should never have to scroll somewhere else to check your own reasoning.
+            </p>
+            <p>
+                <strong>Mixed sources are normal.</strong> Real research is a PDF, a spreadsheet, a
+                video, and a half-remembered blog post. All of them are first-class here.
+            </p>
+            <p>
+                <strong>Durable by default.</strong> The value of a research tool shows up years
+                later. Compendium is built so an old topic still explains itself.
+            </p>
+
+            <h2>Who it's for</h2>
+            <p>
+                Analysts building a case from mixed sources. Students keeping a literature review
+                honest. Engineers recording why an architecture decision was made. Anyone who has
+                had to answer "what makes you say that?" and wanted a better response than a vague
+                recollection.
+            </p>
+        </div>
+
+        <aside class="prose-aside">
+            <div class="aside-card">
+                <h4>At a glance</h4>
+                <dl class="aside-list">
+                    <dt>Model</dt>
+                    <dd>Domains &rarr; Topics &rarr; Statements &rarr; Evidence</dd>
+                    <dt>Evidence types</dt>
+                    <dd>Links, documents, images, video, tables, rich text</dd>
+                    <dt>Best for</dt>
+                    <dd>Long-running research that has to be defended later</dd>
+                </dl>
+            </div>
+            <div class="aside-card aside-card-cta">
+                <h4>See it in practice</h4>
+                <p>Browse the domains already mapped in this workspace.</p>
+                <a href="{{ url_for('all_domains') }}" class="btn-cta">All Domains</a>
+            </div>
+        </aside>
+    </div>
+</section>
+
+<section class="cta-band">
+    <div class="public-container cta-inner">
+        <h2>Start with one topic.</h2>
+        <p>Pick a question you care about and give it the evidence it deserves.</p>
+        <a href="{{ url_for('all_domains') }}" class="btn-cta btn-cta-lg btn-cta-invert">Open Compendium</a>
+    </div>
+</section>
+{% endblock %}

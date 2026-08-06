@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Compendium{% endblock %}</title>
+    <meta name="description" content="{% block description %}Compendium turns scattered sources into structured, evidence-backed arguments.{% endblock %}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body class="public-body">
+    <header class="public-header">
+        <div class="public-container public-header-inner">
+            <a href="{{ url_for('index') }}" class="public-brand">
+                <span class="public-brand-mark">C</span>
+                <span class="public-brand-name">Compendium</span>
+            </a>
+            <nav class="public-nav">
+                <a href="{{ url_for('index') }}" class="public-nav-link {% if request.endpoint == 'index' %}active{% endif %}">Home</a>
+                <a href="{{ url_for('about') }}" class="public-nav-link {% if request.endpoint == 'about' %}active{% endif %}">About</a>
+                <a href="{{ url_for('all_domains') }}" class="public-nav-link {% if request.endpoint in ['all_domains', 'domain', 'topic'] %}active{% endif %}">All Domains</a>
+            </nav>
+            <div class="public-header-actions">
+                <a href="{{ url_for('dashboard') }}" class="public-link-subtle">Sign in</a>
+                <a href="{{ url_for('all_domains') }}" class="btn-cta">Open the app</a>
+            </div>
+        </div>
+    </header>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <div class="public-container" style="padding-top: 1.5rem;">
+                {% for msg in messages %}
+                    <div class="flash">{{ msg }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="public-footer">
+        <div class="public-container public-footer-inner">
+            <div class="public-footer-brand">
+                <div class="public-brand">
+                    <span class="public-brand-mark">C</span>
+                    <span class="public-brand-name">Compendium</span>
+                </div>
+                <p class="public-footer-tagline">Structured research, backed by evidence you can trace.</p>
+            </div>
+            <div class="public-footer-links">
+                <div class="public-footer-col">
+                    <h5>Product</h5>
+                    <a href="{{ url_for('all_domains') }}">All Domains</a>
+                    <a href="{{ url_for('dashboard') }}">Dashboard</a>
+                </div>
+                <div class="public-footer-col">
+                    <h5>Company</h5>
+                    <a href="{{ url_for('about') }}">About</a>
+                    <a href="{{ url_for('index') }}">Home</a>
+                </div>
+            </div>
+        </div>
+        <div class="public-container public-footer-bottom">
+            <span>&copy; {{ current_year }} Compendium</span>
+            <span>Built for people who cite their sources.</span>
+        </div>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

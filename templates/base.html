@@ -14,30 +14,42 @@
     <div class="app-layout">
         <aside class="sidebar">
             <div class="sidebar-header">
-                <div class="sidebar-brand">Project Alpha</div>
-                <div class="sidebar-subtitle">Evidence Mapping</div>
+                <a href="{{ url_for('index') }}" class="sidebar-brand-link">
+                    <div class="sidebar-brand">Compendium</div>
+                    <div class="sidebar-subtitle">Evidence Mapping</div>
+                </a>
             </div>
             <nav class="sidebar-nav">
-                <a href="{{ url_for('index') }}" class="sidebar-link active">
-                    <span class="sidebar-icon">&#9632;</span> Overview
+                <a href="{{ url_for('all_domains') }}" class="sidebar-link {% if request.endpoint in ['all_domains', 'domain', 'topic'] %}active{% endif %}">
+                    <span class="sidebar-icon">&#9632;</span> All Domains
                 </a>
-                <a href="#" class="sidebar-link">
-                    <span class="sidebar-icon">&#9632;</span> Claims
+                <a href="{{ url_for('dashboard') }}" class="sidebar-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
+                    <span class="sidebar-icon">&#9632;</span> Dashboard
+                </a>
+                <a href="{{ url_for('about') }}" class="sidebar-link">
+                    <span class="sidebar-icon">&#9632;</span> About
                 </a>
             </nav>
             <div class="sidebar-footer">
-                <a href="#" class="sidebar-link">
-                    <span class="sidebar-icon">&#9632;</span> Documentation
+                <a href="{{ url_for('index') }}" class="sidebar-link">
+                    <span class="sidebar-icon">&#9632;</span> Landing Page
                 </a>
-                <div class="sidebar-avatar">&#9632;</div>
+                <a href="{{ url_for('dashboard') }}" class="sidebar-user">
+                    <div class="sidebar-avatar">{{ current_user.initials }}</div>
+                    <div class="sidebar-user-meta">
+                        <div class="sidebar-user-name">{{ current_user.name }}</div>
+                        <div class="sidebar-user-role">{{ current_user.role }}</div>
+                    </div>
+                </a>
             </div>
         </aside>
 
         <div class="main-area">
             <header class="top-header">
                 <nav class="top-nav">
-                    <a href="{{ url_for('index') }}" class="top-nav-link {% if request.endpoint == 'index' %}active{% endif %}">Archive</a>
-                    <a href="#" class="top-nav-link {% if request.endpoint in ['domain', 'topic'] %}active{% endif %}">Claims</a>
+                    <a href="{{ url_for('all_domains') }}" class="top-nav-link {% if request.endpoint in ['all_domains', 'domain', 'topic'] %}active{% endif %}">All Domains</a>
+                    <a href="{{ url_for('dashboard') }}" class="top-nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
+                    <a href="{{ url_for('about') }}" class="top-nav-link">About</a>
                 </nav>
                 <div class="top-actions">
                     <div class="search-box">
@@ -51,7 +63,7 @@
             </header>
 
             <div class="breadcrumb-bar">
-                <a href="{{ url_for('index') }}">Home</a>{% if domain %}
+                <a href="{{ url_for('all_domains') }}">All Domains</a>{% if domain %}
                 &gt; <a href="{{ url_for('domain', domain_id=domain.id) }}">{{ domain.name }}</a>{% endif %}{% if topic %}
                 &gt; <span>{{ topic.name }}</span>{% endif %}
             </div>

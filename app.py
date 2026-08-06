@@ -48,13 +48,30 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             statement_id INTEGER NOT NULL,
             title TEXT NOT NULL,
-            type TEXT NOT NULL CHECK (type IN ('link', 'document', 'image', 'video')),
+            type TEXT NOT NULL CHECK (type IN ('link', 'document', 'image', 'video', 'text')),
             content TEXT NOT NULL,
             filename TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (statement_id) REFERENCES statements (id) ON DELETE CASCADE
         );
     ''')
+    
+    cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='attachments'")
+    existing = cursor.fetchone()
+    if existing and 'text' not in existing[0]:
+        cursor.execute('''CREATE TABLE attachments_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            statement_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            type TEXT NOT NULL CHECK (type IN ('link', 'document', 'image', 'video', 'text')),
+            content TEXT NOT NULL,
+            filename TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (statement_id) REFERENCES statements (id) ON DELETE CASCADE
+        )''')
+        cursor.execute('INSERT INTO attachments_new SELECT id, statement_id, title, type, content, filename, created_at FROM attachments')
+        cursor.execute('DROP TABLE attachments')
+        cursor.execute('ALTER TABLE attachments_new RENAME TO attachments')
     
     cursor.execute('SELECT COUNT(*) FROM domains')
     if cursor.fetchone()[0] == 0:
@@ -177,6 +194,71 @@ def create_attachment():
     conn = get_db()
     conn.execute('INSERT INTO attachments (statement_id, title, type, content, filename) VALUES (?, ?, ?, ?, ?)',
                  (statement_id, title, att_type, content, filename))
+    conn.commit()
+    conn.close()
+    return redirect(request.referrer or url_for('index'))
+
+@app.route('/update_statement', methods=['POST'])
+def update_statement():
+    statement_id = request.form.get('statement_id')
+    text = request.form.get('text', '').strip()
+    if not statement_id or not text:
+        flash('Statement text is required')
+        return redirect(request.referrer or url_for('index'))
+    conn = get_db()
+    conn.execute('UPDATE statements SET text = ? WHERE id = ?', (text, statement_id))
+    conn.commit()
+    conn.close()
+    return redirect(request.referrer or url_for('index'))
+
+@app.route('/delete_statement/<int:statement_id>', methods=['POST'])
+def delete_statement(statement_id):
+    conn = get_db()
+    conn.execute('DELETE FROM statements WHERE id = ?', (statement_id,))
+    conn.commit()
+    conn.close()
+    return redirect(request.referrer or url_for('index'))
+
+@app.route('/update_topic', methods=['POST'])
+def update_topic():
+    topic_id = request.form.get('topic_id')
+    name = request.form.get('name', '').strip()
+    description = request.form.get('description', '').strip()
+    if not topic_id or not name:
+        flash('Topic name is required')
+        return redirect(request.referrer or url_for('index'))
+    conn = get_db()
+    conn.execute('UPDATE topics SET name = ?, description = ? WHERE id = ?', (name, description, topic_id))
+    conn.commit()
+    conn.close()
+    return redirect(request.referrer or url_for('index'))
+
+@app.route('/delete_topic/<int:topic_id>', methods=['POST'])
+def delete_topic(topic_id):
+    conn = get_db()
+    conn.execute('DELETE FROM topics WHERE id = ?', (topic_id,))
+    conn.commit()
+    conn.close()
+    return redirect(request.referrer or url_for('index'))
+
+@app.route('/update_domain', methods=['POST'])
+def update_domain():
+    domain_id = request.form.get('domain_id')
+    name = request.form.get('name', '').strip()
+    description = request.form.get('description', '').strip()
+    if not domain_id or not name:
+        flash('Domain name is required')
+        return redirect(request.referrer or url_for('index'))
+    conn = get_db()
+    conn.execute('UPDATE domains SET name = ?, description = ? WHERE id = ?', (name, description, domain_id))
+    conn.commit()
+    conn.close()
+    return redirect(request.referrer or url_for('index'))
+
+@app.route('/delete_domain/<int:domain_id>', methods=['POST'])
+def delete_domain(domain_id):
+    conn = get_db()
+    conn.execute('DELETE FROM domains WHERE id = ?', (domain_id,))
     conn.commit()
     conn.close()
     return redirect(request.referrer or url_for('index'))

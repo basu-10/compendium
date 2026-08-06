@@ -3,68 +3,56 @@
 {% block title %}{{ topic.name }} - Knowledge Vault{% endblock %}
 
 {% block content %}
-<div class="view active">
-    <div class="section-header">
-        <h1>{{ topic.name }}</h1>
-        <button class="filter-btn" onclick="document.getElementById('add-statement-form').style.display='block'">+ New Statement</button>
+<div class="view active topic-page">
+    {% set topic_edit_modal_id = 'edit-topic-' ~ topic.id %}
+    {% set topic_delete_modal_id = 'delete-topic-' ~ topic.id %}
+    <div class="section-header topic-header" id="topic-header">
+        <div class="topic-title-group">
+            <h1>{{ topic.name }}</h1>
+        </div>
+        {% set edit_modal_id = topic_edit_modal_id %}
+        {% set edit_url = url_for('update_topic') %}
+        {% set delete_modal_id = topic_delete_modal_id %}
+        {% set delete_url = url_for('delete_topic', topic_id=topic.id) %}
+        {% set delete_title = 'Delete Topic' %}
+        {% set delete_message = 'Are you sure you want to delete this topic and all its statements?' %}
+        {% include "components/hover_actions.html" with context %}
     </div>
     
-    <div class="topic-intro">
+    <div class="topic-intro" id="topic-intro">
         <p><strong>Overview:</strong> {{ topic.description or 'No description provided for this topic.' }}</p>
     </div>
     
-    <form id="add-statement-form" class="add-form" method="POST" action="{{ url_for('create_statement') }}" style="display: none;">
-        <input type="hidden" name="topic_id" value="{{ topic.id }}">
-        <div class="form-group">
-            <label for="statement-text">Statement</label>
-            <textarea id="statement-text" name="text" required></textarea>
-        </div>
-        <button type="submit" class="btn-primary">Add Statement</button>
-    </form>
+    <button class="filter-btn" onclick="openModal('add-statement-{{ topic.id }}')">+ New Statement</button>
     
-    <div class="split-layout">
-        <div class="left-pane">
-            <h3 style="color: var(--accent-teal-dark);">Claims & Statements</h3>
-            
+    <!-- Split Layout with Split.js -->
+    <div class="split-layout" id="split-layout">
+        <div class="left-pane" id="claims-pane">
+            <div class="pane-header">
+                <h3 style="color: var(--accent-teal-dark);">Claims & Statements</h3>
+            </div>
             {% if statements %}
                 {% for statement in statements %}
+                {% set stmt_edit_modal_id = 'edit-statement-' ~ statement.id %}
+                {% set stmt_delete_modal_id = 'delete-statement-' ~ statement.id %}
+                {% set attach_modal_id = 'attach-' ~ statement.id %}
                 <div class="statement {% if loop.first %}active-statement{% endif %}" 
                      data-statement-id="{{ statement.id }}"
                      onclick="showEvidence({{ statement.id }})">
-                    <div class="statement-header">
+                    <div class="statement-content">
                         <div class="statement-text">
                             <strong>Statement {{ loop.index }}:</strong> {{ statement.text }}
                         </div>
-                        <button class="filter-btn" style="margin-left: auto; flex-shrink: 0;" 
-                                onclick="event.stopPropagation(); document.getElementById('attach-form-{{ statement.id }}').style.display='block'">+ Attach</button>
                     </div>
-                    
-                    <form id="attach-form-{{ statement.id }}" class="add-form" method="POST" action="{{ url_for('create_attachment') }}" enctype="multipart/form-data" style="display: none; margin-top: 1rem;">
-                        <input type="hidden" name="statement_id" value="{{ statement.id }}">
-                        <div class="form-group">
-                            <label for="att-title-{{ statement.id }}">Title</label>
-                            <input type="text" id="att-title-{{ statement.id }}" name="title" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="att-type-{{ statement.id }}">Type</label>
-                            <select id="att-type-{{ statement.id }}" name="type" onchange="toggleFileInput({{ statement.id }}, this.value)">
-                                <option value="link">Link</option>
-                                <option value="document">Document</option>
-                                <option value="image">Image</option>
-                                <option value="video">Video</option>
-                                <option value="text">Text</option>
-                            </select>
-                        </div>
-                        <div class="form-group" id="file-group-{{ statement.id }}" style="display: none;">
-                            <label for="att-file-{{ statement.id }}">Upload File</label>
-                            <input type="file" id="att-file-{{ statement.id }}" name="file">
-                        </div>
-                        <div class="form-group" id="url-group-{{ statement.id }}">
-                            <label for="att-content-{{ statement.id }}">URL / Content</label>
-                            <input type="text" id="att-content-{{ statement.id }}" name="content" placeholder="https://...">
-                        </div>
-                        <button type="submit" class="btn-primary">Add Attachment</button>
-                    </form>
+                    {% set edit_modal_id = stmt_edit_modal_id %}
+                    {% set edit_url = url_for('update_statement') %}
+                    {% set delete_modal_id = stmt_delete_modal_id %}
+                    {% set delete_url = url_for('delete_statement', statement_id=statement.id) %}
+                    {% set delete_title = 'Delete Statement' %}
+                    {% set delete_message = 'Are you sure you want to delete this statement and its attachments?' %}
+                    {% set attach_modal_id = attach_modal_id %}
+                    {% set attach_url = url_for('create_attachment') %}
+                    {% include "components/hover_actions.html" with context %}
                     
                     {% if statement.id in attachments_by_statement %}
                     <div class="attachments-list">
@@ -81,6 +69,8 @@
                                     &bull; <a href="{{ url_for('uploaded_file', filename=att.content) }}" target="_blank">Download</a>
                                 {% elif att.type == 'video' %}
                                     &bull; <a href="{{ att.content }}" target="_blank">Watch Video</a>
+                                {% elif att.type == 'text' %}
+                                    &bull; <span>Text Attachment</span>
                                 {% endif %}
                             </div>
                         </div>
@@ -96,14 +86,18 @@
             {% endif %}
         </div>
         
-        <div class="right-pane" id="evidence-container">
-            <h3 style="color: var(--accent-teal-dark);">Supporting Evidence</h3>
+        <div class="gutter" id="gutter"></div>
+        
+        <div class="right-pane" id="evidence-pane">
+            <div class="pane-header">
+                <h3 style="color: var(--accent-teal-dark);">Supporting Evidence</h3>
+            </div>
             <div id="evidence-content">
                 {% if statements %}
                     {% set first_id = statements[0].id %}
                     {% if first_id in attachments_by_statement %}
                         {% for att in attachments_by_statement[first_id] %}
-                        <div class="evidence-card" onclick="openModal('{{ att.title|escape }}', '{{ att.type }}', '{{ att.content|escape }}', '{{ att.filename or '' }}')">
+                        <div class="evidence-card" data-title="{{ att.title|e }}" data-type="{{ att.type|e }}" data-content="{{ att.content|e }}" data-filename="{{ att.filename or ''|e }}" onclick="openEvidenceModal('{{ att.title|e }}', '{{ att.type|e }}', '{{ att.content|e }}', '{{ att.filename or ''|e }}')">
                             <span class="evidence-type">{{ att.type }}</span>
                             <h4>{{ att.title }}</h4>
                             <p>
@@ -115,6 +109,9 @@
                                     Uploaded document
                                 {% elif att.type == 'video' %}
                                     {{ att.content }}
+                                {% elif att.type == 'text' %}
+                                    {% set preview_text = att.content[:100] + '...' if att.content|length > 100 else att.content %}
+                                    {{ preview_text }}
                                 {% endif %}
                             </p>
                         </div>
@@ -132,37 +129,68 @@
             </div>
         </div>
     </div>
-</div>
-
-<!-- Evidence Data as JS Object -->
-<script>
-    const evidenceData = {
-        {% for statement in statements %}
-            {{ statement.id }}: [
-                {% if statement.id in attachments_by_statement %}
-                    {% for att in attachments_by_statement[statement.id] %}
-                    {
-                        id: {{ att.id }},
-                        title: {{ att.title|tojson }},
-                        type: {{ att.type|tojson }},
-                        content: {{ att.content|tojson }},
-                        filename: {{ att.filename|tojson or 'null' }}
-                    }{% if not loop.last %},{% endif %}
-                    {% endfor %}
-                {% endif %}
-            ]{% if not loop.last %},{% endif %}
-        {% endfor %}
-    };
-</script>
-
-<!-- Modal -->
-<div class="modal-overlay" id="modal">
-    <div class="modal-content">
-        <button class="close-modal" onclick="closeModal()">&times;</button>
-        <span class="evidence-type" id="modal-type" style="display: block; margin-bottom: 1rem;"></span>
-        <h2 id="modal-title"></h2>
-        <div id="modal-body" style="margin-top: 1.5rem; background: var(--bg-color); padding: 1.5rem; border: 1px solid var(--border-color);">
+    
+    {% set add_stmt_modal_id = 'add-statement-' ~ topic.id %}
+    {% include "modals/add_statement.html" with context %}
+    
+    {% for statement in statements %}
+        {% set modal_id = 'attach-' ~ statement.id %}
+        {% set statement_id = statement.id %}
+        {% include "modals/attachment_form.html" with context %}
+        
+        {% set modal_id = 'edit-statement-' ~ statement.id %}
+        {% set current_text = statement.text %}
+        {% include "modals/edit_statement.html" with context %}
+        
+        {% set modal_id = 'delete-statement-' ~ statement.id %}
+        {% include "modals/confirm_delete.html" with context %}
+    {% endfor %}
+    
+    {% set modal_id = topic_edit_modal_id %}
+    {% set current_name = topic.name %}
+    {% set current_description = topic.description or '' %}
+    {% include "modals/edit_topic.html" with context %}
+    
+    {% set modal_id = topic_delete_modal_id %}
+    {% include "modals/confirm_delete.html" with context %}
+    
+    <div class="modal-overlay" id="evidence-modal">
+        <div class="modal-content">
+            <button class="close-modal" onclick="closeEvidenceModal()">&times;</button>
+            <span class="evidence-type" id="modal-type" style="display: block; margin-bottom: 1rem;"></span>
+            <h2 id="modal-title"></h2>
+            <div id="modal-body" style="margin-top: 1.5rem; background: var(--bg-color); padding: 1.5rem; border: 1px solid var(--border-color);">
+            </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/split.js@1.6.5/dist/split.min.js"></script>
+<script>
+// Split.js initialization
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof Split !== 'undefined') {
+        const split = Split(['#claims-pane', '#evidence-pane'], {
+            direction: 'horizontal',
+            sizes: [50, 50],
+            minSize: 200,
+            gutterSize: 8,
+            cursor: 'col-resize',
+            onDrag: function() {
+                localStorage.setItem('splitSizes', JSON.stringify(split.getSizes()));
+            }
+        });
+        
+        const savedSizes = JSON.parse(localStorage.getItem('splitSizes'));
+        if (savedSizes) {
+            split.setSizes(savedSizes);
+        }
+    }
+    
+    initHoverActions();
+    initMobileAccordion();
+});
+</script>
 {% endblock %}

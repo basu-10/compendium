@@ -1,0 +1,12 @@
+{# Reusable hover action toolbar #}
+<div class="hover-actions" style="opacity: 0; transition: opacity 0.2s;">
+    {% if edit_url %}
+    <button class="icon-btn" onclick="openModal('{{ edit_modal_id }}'); event.stopPropagation();" title="Edit" aria-label="Edit">✎</button>
+    {% endif %}
+    {% if delete_url %}
+    <button class="icon-btn delete-btn" onclick="openConfirmModal('{{ delete_modal_id }}', '{{ delete_title }}', '{{ delete_message }}', '{{ delete_url }}'); event.stopPropagation();" title="Delete" aria-label="Delete">🗑</button>
+    {% endif %}
+    {% if attach_url %}
+    <button class="icon-btn" onclick="openModal('{{ attach_modal_id }}'); event.stopPropagation();" title="Attach Evidence" aria-label="Attach Evidence">📎</button>
+    {% endif %}
+</div>

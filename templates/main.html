@@ -8,11 +8,32 @@
     <p style="margin-bottom: 2rem;">Select a knowledge domain to explore.</p>
     <div class="grid">
         {% for domain in domains %}
-        <a href="{{ url_for('domain', domain_id=domain.id) }}" class="card">
-            <h2>{{ domain.name }}</h2>
-            <p>{{ domain.description }}</p>
-            <div class="tag">{{ domain.topic_count }} Topics</div>
-        </a>
+        {% set domain_edit_modal_id = 'edit-domain-' ~ domain.id %}
+        {% set domain_delete_modal_id = 'delete-domain-' ~ domain.id %}
+        <div class="card" onclick="window.location.href='{{ url_for('domain', domain_id=domain.id) }}'">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;">
+                <div style="flex: 1; min-width: 0;">
+                    <h2>{{ domain.name }}</h2>
+                    <p>{{ domain.description }}</p>
+                    <div class="tag">{{ domain.topic_count }} Topics</div>
+                </div>
+                {% set edit_modal_id = domain_edit_modal_id %}
+                {% set edit_url = url_for('update_domain') %}
+                {% set delete_modal_id = domain_delete_modal_id %}
+                {% set delete_url = url_for('delete_domain', domain_id=domain.id) %}
+                {% set delete_title = 'Delete Domain' %}
+                {% set delete_message = 'Are you sure you want to delete this domain and all its topics?' %}
+                {% include "components/hover_actions.html" with context %}
+            </div>
+            
+            {% set modal_id = domain_edit_modal_id %}
+            {% set current_name = domain.name %}
+            {% set current_description = domain.description or '' %}
+            {% include "modals/edit_domain.html" with context %}
+            
+            {% set modal_id = domain_delete_modal_id %}
+            {% include "modals/confirm_delete.html" with context %}
+        </div>
         {% endfor %}
     </div>
 </div>

@@ -1,0 +1,33 @@
+{% extends "modals/base_modal.html" %}
+{% block modal_content %}
+<form id="attach-form-{{ statement_id }}" class="add-form" method="POST" action="{{ url_for('create_attachment') }}" enctype="multipart/form-data">
+    <input type="hidden" name="statement_id" value="{{ statement_id }}">
+    <h3 id="{{ modal_id }}-title">{{ title or 'Attach Evidence' }}</h3>
+    <div class="form-group">
+        <label for="att-title-{{ statement_id }}">Title</label>
+        <input type="text" id="att-title-{{ statement_id }}" name="title" required>
+    </div>
+    <div class="form-group">
+        <label for="att-type-{{ statement_id }}">Type</label>
+        <select id="att-type-{{ statement_id }}" name="type" onchange="toggleFileInput('{{ statement_id }}', this.value)">
+            <option value="link">Link</option>
+            <option value="document">Document</option>
+            <option value="image">Image</option>
+            <option value="video">Video</option>
+            <option value="text">Text</option>
+        </select>
+    </div>
+    <div class="form-group" id="file-group-{{ statement_id }}" style="display: none;">
+        <label for="att-file-{{ statement_id }}">Upload File</label>
+        <input type="file" id="att-file-{{ statement_id }}" name="file">
+    </div>
+    <div class="form-group" id="url-group-{{ statement_id }}">
+        <label for="att-content-{{ statement_id }}">URL / Content</label>
+        <input type="text" id="att-content-{{ statement_id }}" name="content" placeholder="https://...">
+    </div>
+    <div class="form-actions">
+        <button type="submit" class="btn-primary">Add Attachment</button>
+        <button type="button" class="btn-secondary" onclick="closeModal('{{ modal_id }}')">Cancel</button>
+    </div>
+</form>
+{% endblock %}

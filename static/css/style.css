@@ -355,11 +355,248 @@ h1, h2, h3 {
     border: 1px solid var(--border-color);
 }
 
+/* ===== Split.js Gutter ===== */
+.gutter {
+    background-color: var(--border-color);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath d='M2 0v8M5 0v8' stroke='%2366fcf1' stroke-width='1'/%3E%3C/svg%3E");
+    cursor: col-resize;
+    flex-shrink: 0;
+}
+
+.gutter:hover {
+    background-color: var(--accent-teal-dark);
+}
+
+.gutter.gutter-horizontal {
+    width: 8px;
+    height: 100%;
+}
+
+/* ===== Form Actions ===== */
+.form-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+/* ===== Hover Action Toolbars ===== */
+.hover-actions {
+    display: flex;
+    gap: 0.5rem;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.statement:hover .hover-actions,
+.topic-header:hover .hover-actions,
+.evidence-card:hover .hover-actions,
+.card:hover .hover-actions {
+    opacity: 1;
+}
+
+/* Touch devices - show on touch */
+@media (hover: none) and (pointer: coarse) {
+    .hover-actions {
+        opacity: 1;
+    }
+}
+
+.icon-btn {
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.icon-btn:hover {
+    border-color: var(--accent-teal);
+    color: var(--accent-teal);
+    background: rgba(102, 252, 241, 0.1);
+}
+
+.icon-btn.delete-btn:hover {
+    border-color: #ff4444;
+    color: #ff4444;
+    background: rgba(255, 68, 68, 0.1);
+}
+
+.icon-btn:focus {
+    outline: 2px solid var(--accent-teal);
+    outline-offset: 2px;
+}
+
+/* ===== Confirmation Modal ===== */
+.confirm-modal {
+    text-align: center;
+    padding: 1rem 0;
+}
+
+.confirm-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-top: 1.5rem;
+}
+
+.btn-danger {
+    background: none;
+    border: 1px solid #ff4444;
+    color: #ff4444;
+    padding: 0.5rem 1.5rem;
+    cursor: pointer;
+    font-family: inherit;
+    border-radius: 4px;
+}
+
+.btn-danger:hover {
+    background: rgba(255, 68, 68, 0.1);
+}
+
+.btn-secondary {
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-family: inherit;
+    border-radius: 4px;
+}
+
+.btn-secondary:hover {
+    border-color: var(--accent-teal);
+    color: var(--accent-teal);
+}
+
+/* ===== Topic Header ===== */
+.topic-header {
+    position: relative;
+}
+
+.topic-title-group {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+}
+
+/* ===== Mobile Accordion ===== */
 @media (max-width: 768px) {
     .split-layout {
-        flex-direction: column;
+        display: block;
     }
     
+    .accordion-pane {
+        border: 1px solid var(--border-color);
+        margin-bottom: 1rem;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+    
+    .accordion-pane.collapsed .pane-content {
+        display: none;
+    }
+    
+    .pane-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        background: var(--surface-color);
+        cursor: pointer;
+    }
+    
+    .pane-toggle {
+        background: none;
+        border: none;
+        color: var(--text-main);
+        font-size: 1.2rem;
+        cursor: pointer;
+        padding: 0.25rem;
+    }
+    
+    .pane-toggle::after {
+        content: '▼';
+        transition: transform 0.2s;
+        display: inline-block;
+    }
+    
+    .accordion-pane.collapsed .pane-toggle::after {
+        transform: rotate(-90deg);
+    }
+    
+    .pane-content {
+        padding: 1rem;
+    }
+}
+
+/* ===== Modal Improvements ===== */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background-color: rgba(0, 0, 0, 0.85);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+    padding: 1rem;
+    box-sizing: border-box;
+}
+
+.modal-overlay.active { display: flex; }
+
+.modal-content {
+    background-color: var(--surface-color);
+    border-top: 4px solid var(--accent-teal);
+    width: 100%;
+    max-width: 600px;
+    padding: 2rem;
+    position: relative;
+    max-height: 90vh;
+    overflow-y: auto;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+.close-modal {
+    position: absolute;
+    top: 1rem; right: 1rem;
+    background: none; border: none;
+    color: var(--text-main);
+    font-size: 1.5rem;
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.2s;
+}
+
+.close-modal:hover {
+    color: var(--accent-teal);
+    background: rgba(102, 252, 241, 0.1);
+}
+
+.close-modal:focus {
+    outline: 2px solid var(--accent-teal);
+    outline-offset: 2px;
+}
+
+/* Ensure evidence modal still works */
+#evidence-modal .modal-content {
+    max-width: 800px;
+}
+
+@media (max-width: 768px) {
     header {
         flex-direction: column;
         align-items: flex-start;

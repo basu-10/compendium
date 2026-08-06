@@ -470,6 +470,20 @@ p {
     box-shadow: var(--shadow);
 }
 
+/* Card header holds the type badge and the hover action buttons */
+.evidence-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    min-height: 32px;
+}
+
+.evidence-card-header .evidence-type {
+    margin-bottom: 0;
+}
+
 .evidence-type {
     font-size: 0.75rem;
     color: var(--text-muted);
@@ -486,10 +500,59 @@ p {
     color: var(--text-primary);
 }
 
-.evidence-card p {
+/* Per-kind previews */
+.evidence-preview {
+    margin-top: auto;
+}
+
+.evidence-thumb {
+    display: block;
+    width: 100%;
+    max-height: 150px;
+    object-fit: cover;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background-color: var(--bg-muted);
+}
+
+.evidence-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 72px;
+    font-size: 1.75rem;
+    color: var(--text-muted);
+    background-color: var(--bg-muted);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 0.5rem;
+}
+
+.evidence-sub {
     font-size: 0.85rem;
     color: var(--text-secondary);
     line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.evidence-link {
+    color: var(--text-primary);
+    text-decoration: underline;
+}
+
+.richtext-body {
+    background: var(--bg-muted);
+    padding: 1rem;
+    border-radius: 4px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    margin: 0;
+}
+
+.form-hint {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 0.35rem;
 }
 
 /* Modals */
@@ -799,7 +862,9 @@ p {
 .statement:hover .hover-actions,
 .topic-header:hover .hover-actions,
 .evidence-card:hover .hover-actions,
-.card:hover .hover-actions {
+.card:hover .hover-actions,
+.hover-actions:focus-within,
+.hover-actions.touch-visible {
     opacity: 1;
 }
 

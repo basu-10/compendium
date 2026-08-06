@@ -11,15 +11,16 @@
         <label for="att-type-{{ statement_id }}">Type</label>
         <select id="att-type-{{ statement_id }}" name="type" onchange="toggleFileInput('{{ statement_id }}', this.value)">
             <option value="link">Link</option>
-            <option value="document">Document</option>
+            <option value="richtext">Rich Text</option>
             <option value="image">Image</option>
             <option value="video">Video</option>
-            <option value="text">Text</option>
+            <option value="table">Table / Spreadsheet</option>
+            <option value="document">Other File</option>
         </select>
     </div>
     <div class="form-group" id="file-group-{{ statement_id }}" style="display: none;">
         <label for="att-file-{{ statement_id }}">Upload File</label>
-        <input type="file" id="att-file-{{ statement_id }}" name="file">
+        <input type="file" id="att-file-{{ statement_id }}" name="file" disabled>
     </div>
     <div class="form-group" id="url-group-{{ statement_id }}">
         <label for="att-content-{{ statement_id }}">URL / Content</label>

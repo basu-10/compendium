@@ -96,24 +96,7 @@
                     {% set first_id = statements[0].id %}
                     {% if first_id in attachments_by_statement %}
                         {% for att in attachments_by_statement[first_id] %}
-                        <div class="evidence-card" data-title="{{ att.title|e }}" data-type="{{ att.type|e }}" data-content="{{ att.content|e }}" data-filename="{{ att.filename or ''|e }}" onclick="openEvidenceModal('{{ att.title|e }}', '{{ att.type|e }}', '{{ att.content|e }}', '{{ att.filename or ''|e }}')">
-                            <span class="evidence-type">{{ att.type }}</span>
-                            <h4>{{ att.title }}</h4>
-                            <p>
-                                {% if att.type == 'link' %}
-                                    {{ att.content }}
-                                {% elif att.type == 'image' %}
-                                    Uploaded image
-                                {% elif att.type == 'document' %}
-                                    Uploaded document
-                                {% elif att.type == 'video' %}
-                                    {{ att.content }}
-                                {% elif att.type == 'text' %}
-                                    {% set preview_text = att.content[:100] + '...' if att.content|length > 100 else att.content %}
-                                    {{ preview_text }}
-                                {% endif %}
-                            </p>
-                        </div>
+                            {% include "components/evidence_card.html" with context %}
                         {% endfor %}
                     {% else %}
                         <div class="empty-state">
@@ -145,6 +128,14 @@
         {% include "modals/confirm_delete.html" with context %}
     {% endfor %}
 
+    {# One shared delete-confirm modal for all evidence assets; the JS fills in
+       the action URL and message when an attachment's delete button is tapped,
+       instead of rendering one modal per attachment. #}
+    {% set modal_id = 'delete-attachment' %}
+    {% set title = 'Delete Evidence' %}
+    {% set message = 'Are you sure you want to delete this evidence asset?' %}
+    {% include "modals/confirm_delete.html" with context %}
+
     {% set modal_id = topic_edit_modal_id %}
     {% set current_name = topic.name %}
     {% set current_description = topic.description or '' %}
@@ -167,7 +158,15 @@
 
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/split.js@1.6.5/dist/split.min.js"></script>
+<script id="evidence-data" type="application/json">{{ evidence_data | tojson }}</script>
 <script>
+// Evidence for every statement, keyed by statement id. Parsed from a JSON
+// script tag so titles/URLs containing quotes cannot break out of the script.
+const evidenceData = JSON.parse(document.getElementById('evidence-data').textContent);
+// Authoritative list mirrored from CONTENT_ONLY_TYPES in app.py. Single source
+// of truth so client form logic cannot drift from server validation.
+const CONTENT_ONLY_TYPES = {{ CONTENT_ONLY_TYPES | tojson }};
+
 // Split.js initialization
 document.addEventListener('DOMContentLoaded', function() {
     if (typeof Split !== 'undefined') {
@@ -189,6 +188,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     initHoverActions();
+    initEvidenceCards();
     initMobileAccordion();
 });
 </script>

@@ -10,9 +10,80 @@ app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max upload
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'compendium.db')
 
+# Asset types are grouped into a small set of render "kinds" so that cards only
+# ever need to know how to draw: richtext, image, video, table, file, link.
+ASSET_TYPES = ('link', 'document', 'image', 'video', 'text', 'richtext', 'table')
+
+TYPE_TO_KIND = {
+    'link': 'link',
+    'text': 'richtext',
+    'richtext': 'richtext',
+    'image': 'image',
+    'video': 'video',
+    'table': 'table',
+    'document': 'file',
+}
+
+# Extensions that should be treated as a table asset when uploaded as a document.
+TABLE_EXTENSIONS = ('csv', 'tsv', 'xls', 'xlsx', 'ods')
+
+# Types that carry their payload in `content` and never have an uploaded file.
+CONTENT_ONLY_TYPES = ('link', 'text', 'richtext')
+
+# Per-kind upload allowlists. Anything not listed here is rejected outright so
+# that active content (.html, .svg, .xhtml, ...) can never be stored and then
+# served same-origin from /uploads/.
+ALLOWED_EXTENSIONS = {
+    'image': ('png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'),
+    'video': ('mp4', 'webm', 'ogg', 'ogv', 'mov', 'm4v'),
+    'table': TABLE_EXTENSIONS,
+    'document': (
+        'pdf', 'txt', 'md', 'rtf', 'doc', 'docx', 'odt',
+        'ppt', 'pptx', 'odp', 'zip', 'json', 'xml',
+    ) + TABLE_EXTENSIONS,
+}
+
+
+def _upload_extension(att_type, original_name):
+    """Validate an upload's extension for the given type.
+
+    Returns the lowercased extension, or None if it is not allowed.
+    """
+    if '.' not in original_name:
+        return None
+    ext = original_name.rsplit('.', 1)[1].lower()
+    return ext if ext in ALLOWED_EXTENSIONS.get(att_type, ()) else None
+
+
+def asset_kind(att_type, filename=None):
+    """Map a stored attachment type (plus filename hint) to a render kind."""
+    kind = TYPE_TO_KIND.get(att_type, 'file')
+    if kind == 'file' and filename and '.' in filename:
+        ext = filename.rsplit('.', 1)[1].lower()
+        if ext in TABLE_EXTENSIONS:
+            return 'table'
+    return kind
+
+
+PREVIEW_LENGTH = 140
+
+
+def preview_text(text, limit=PREVIEW_LENGTH):
+    """Single source of truth for card preview truncation.
+
+    Both the Jinja card and the JS card read the result of this, so a card
+    never changes its text when it is re-rendered client-side.
+    """
+    value = (text or '').strip()
+    if len(value) <= limit:
+        return value
+    return value[:limit].rstrip() + '...'
+
+
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute('PRAGMA foreign_keys = ON')
     return conn
 
 def init_db():
@@ -48,7 +119,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             statement_id INTEGER NOT NULL,
             title TEXT NOT NULL,
-            type TEXT NOT NULL CHECK (type IN ('link', 'document', 'image', 'video', 'text')),
+            type TEXT NOT NULL CHECK (type IN ('link', 'document', 'image', 'video', 'text', 'richtext', 'table')),
             content TEXT NOT NULL,
             filename TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -58,20 +129,8 @@ def init_db():
     
     cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='attachments'")
     existing = cursor.fetchone()
-    if existing and 'text' not in existing[0]:
-        cursor.execute('''CREATE TABLE attachments_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            statement_id INTEGER NOT NULL,
-            title TEXT NOT NULL,
-            type TEXT NOT NULL CHECK (type IN ('link', 'document', 'image', 'video', 'text')),
-            content TEXT NOT NULL,
-            filename TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (statement_id) REFERENCES statements (id) ON DELETE CASCADE
-        )''')
-        cursor.execute('INSERT INTO attachments_new SELECT id, statement_id, title, type, content, filename, created_at FROM attachments')
-        cursor.execute('DROP TABLE attachments')
-        cursor.execute('ALTER TABLE attachments_new RENAME TO attachments')
+    if existing and 'richtext' not in existing[0]:
+        _migrate_attachments_table(conn, cursor)
     
     cursor.execute('SELECT COUNT(*) FROM domains')
     if cursor.fetchone()[0] == 0:
@@ -80,9 +139,80 @@ def init_db():
             ('Markets & Economics', 'Macro analysis, company 10-K reports, and asset classes.'),
             ('Literature & Society', 'Classic texts, parallel readings, and sociopolitical deep dives.')
         ])
-    
+
+    # Index foreign-key child columns so cascade deletes and the per-delete
+    # filename lookups are index seeks, not full table scans.
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_attachments_statement_id ON attachments (statement_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_statements_topic_id ON statements (topic_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_topics_domain_id ON topics (domain_id)')
+
     conn.commit()
     conn.close()
+
+
+def _migrate_attachments_table(conn, cursor):
+    """Rebuild `attachments` to widen its `type` CHECK constraint.
+
+    Follows SQLite's documented table-rebuild procedure. Foreign keys are
+    disabled for the duration (they cannot be toggled inside a transaction),
+    the swap runs inside one explicit transaction so a crash between the DROP
+    and the RENAME can never leave the database without an `attachments`
+    table, and any scratch table left by a previously failed run is dropped
+    first so the migration is safely re-runnable. Rows that cannot satisfy the
+    foreign key are quarantined in `attachments_orphaned` rather than deleted.
+    """
+    # PRAGMA foreign_keys is a silent no-op inside a transaction, so finish any
+    # implicit one first, then take manual control of transaction boundaries.
+    conn.commit()
+    prior_isolation = conn.isolation_level
+    conn.isolation_level = None
+    cursor.execute('PRAGMA foreign_keys = OFF')
+    try:
+        cursor.execute('BEGIN IMMEDIATE')
+        try:
+            # Left over from an earlier attempt that failed partway through.
+            cursor.execute('DROP TABLE IF EXISTS attachments_new')
+            # Rows orphaned while FK enforcement was inert cannot be carried
+            # over, but they are user data: copy them into a quarantine table
+            # rather than destroying them, and record how many were moved.
+            cursor.execute('''CREATE TABLE IF NOT EXISTS attachments_orphaned AS
+                SELECT * FROM attachments WHERE 0''')
+            cursor.execute('''INSERT INTO attachments_orphaned
+                SELECT * FROM attachments
+                WHERE statement_id NOT IN (SELECT id FROM statements)''')
+            quarantined = cursor.rowcount
+            cursor.execute('DELETE FROM attachments WHERE statement_id NOT IN (SELECT id FROM statements)')
+            if quarantined:
+                app.logger.warning(
+                    'attachments migration: moved %d orphaned row(s) into attachments_orphaned',
+                    quarantined,
+                )
+            cursor.execute('''CREATE TABLE attachments_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                statement_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                type TEXT NOT NULL CHECK (type IN ('link', 'document', 'image', 'video', 'text', 'richtext', 'table')),
+                content TEXT NOT NULL,
+                filename TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (statement_id) REFERENCES statements (id) ON DELETE CASCADE
+            )''')
+            cursor.execute('INSERT INTO attachments_new SELECT id, statement_id, title, type, content, filename, created_at FROM attachments')
+            cursor.execute('DROP TABLE attachments')
+            cursor.execute('ALTER TABLE attachments_new RENAME TO attachments')
+            # Scoped to the rebuilt table so unrelated pre-existing violations
+            # elsewhere in the schema cannot abort startup.
+            violations = cursor.execute("PRAGMA foreign_key_check('attachments')").fetchall()
+            if violations:
+                raise sqlite3.IntegrityError(f'foreign key violations after migration: {violations}')
+            cursor.execute('COMMIT')
+        except Exception:
+            cursor.execute('ROLLBACK')
+            raise
+    finally:
+        cursor.execute('PRAGMA foreign_keys = ON')
+        conn.isolation_level = prior_isolation
+
 
 @app.route('/')
 def index():
@@ -137,11 +267,41 @@ def topic(topic_id):
     attachments_by_statement = {}
     for att in attachments:
         attachments_by_statement.setdefault(att['statement_id'], []).append(att)
+    # Plain-dict version, keyed by string id, for JSON injection into the page so
+    # the right-hand evidence pane can re-render on statement click. For text
+    # kinds (link/richtext) the full body is large, so only the preview ships;
+    # the modal/edit form fetch the full body on demand via /attachment/<id>.
+    # For file-backed kinds the "content" is just a short URL, so it is kept.
+    evidence_data = {
+        str(sid): [
+            {
+                'id': a['id'],
+                'statement_id': a['statement_id'],
+                'title': a['title'],
+                'type': a['type'],
+                'kind': asset_kind(a['type'], a['filename']),
+                'preview': preview_text(a['content']),
+                'filename': a['filename'] or '',
+                **({'content': a['content']} if a['type'] not in CONTENT_ONLY_TYPES else {}),
+            }
+            for a in atts
+        ]
+        for sid, atts in attachments_by_statement.items()
+    }
     conn.close()
     if not topic:
         flash('Topic not found')
         return redirect(url_for('index'))
-    return render_template('topic.html', topic=topic, statements=statements, attachments_by_statement=attachments_by_statement)
+    return render_template(
+        'topic.html',
+        topic=topic,
+        statements=statements,
+        attachments_by_statement=attachments_by_statement,
+        evidence_data=evidence_data,
+        asset_kind=asset_kind,
+        preview_text=preview_text,
+        CONTENT_ONLY_TYPES=CONTENT_ONLY_TYPES,
+    )
 
 @app.route('/create_topic', methods=['POST'])
 def create_topic():
@@ -184,17 +344,34 @@ def create_attachment():
         flash('Statement and title are required')
         return redirect(request.referrer or url_for('index'))
     
-    if att_type != 'link' and file and file.filename:
-        ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+    if att_type not in ASSET_TYPES:
+        att_type = 'link'
+    if att_type not in CONTENT_ONLY_TYPES and file and file.filename:
+        ext = _upload_extension(att_type, file.filename)
+        if ext is None:
+            flash('That file type is not allowed for this asset type')
+            return redirect(request.referrer or url_for('index'))
         filename = f"{uuid.uuid4().hex}.{ext}"
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
         content = filename
+    elif att_type not in CONTENT_ONLY_TYPES and not content:
+        # File-backed types may instead point at a URL (e.g. a YouTube video or
+        # a hosted spreadsheet). Only reject when there is no file AND no URL,
+        # which would otherwise store a row that renders as /uploads/<empty>.
+        flash('A file or URL is required for this asset type')
+        return redirect(request.referrer or url_for('index'))
     
     conn = get_db()
-    conn.execute('INSERT INTO attachments (statement_id, title, type, content, filename) VALUES (?, ?, ?, ?, ?)',
-                 (statement_id, title, att_type, content, filename))
-    conn.commit()
+    try:
+        conn.execute('INSERT INTO attachments (statement_id, title, type, content, filename) VALUES (?, ?, ?, ?, ?)',
+                     (statement_id, title, att_type, content, filename))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        flash('Could not save this attachment')
+        return redirect(request.referrer or url_for('index'))
     conn.close()
     return redirect(request.referrer or url_for('index'))
 
@@ -214,10 +391,147 @@ def update_statement():
 @app.route('/delete_statement/<int:statement_id>', methods=['POST'])
 def delete_statement(statement_id):
     conn = get_db()
+    # Collect files before the cascade removes the rows that reference them.
+    rows = conn.execute(
+        'SELECT filename FROM attachments WHERE statement_id = ? AND filename IS NOT NULL',
+        (statement_id,)
+    ).fetchall()
     conn.execute('DELETE FROM statements WHERE id = ?', (statement_id,))
     conn.commit()
     conn.close()
+    for row in rows:
+        _remove_upload(row['filename'])
     return redirect(request.referrer or url_for('index'))
+
+@app.route('/update_attachment', methods=['POST'])
+def update_attachment():
+    attachment_id = request.form.get('attachment_id')
+    title = request.form.get('title', '').strip()
+    att_type = request.form.get('type', '')
+    content = request.form.get('content', '').strip()
+    file = request.files.get('file')
+
+    if not attachment_id or not title:
+        flash('Attachment title is required')
+        return redirect(request.referrer or url_for('index'))
+
+    conn = get_db()
+    existing = conn.execute('SELECT * FROM attachments WHERE id = ?', (attachment_id,)).fetchone()
+    if not existing:
+        conn.close()
+        flash('Attachment not found')
+        return redirect(request.referrer or url_for('index'))
+
+    if att_type not in ASSET_TYPES:
+        att_type = existing['type']
+
+    filename = existing['filename']
+    old_filename = existing['filename']
+
+    if att_type not in CONTENT_ONLY_TYPES and file and file.filename:
+        ext = _upload_extension(att_type, file.filename)
+        if ext is None:
+            conn.close()
+            flash('That file type is not allowed for this asset type')
+            return redirect(request.referrer or url_for('index'))
+        filename = f"{uuid.uuid4().hex}.{ext}"
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        content = filename
+    elif att_type in CONTENT_ONLY_TYPES:
+        # These types are content-only; drop any previously attached file.
+        filename = None
+        if not content:
+            conn.close()
+            flash('Content is required for this asset type')
+            return redirect(request.referrer or url_for('index'))
+    elif old_filename:
+        # File-backed type keeping its existing file. The edit form still
+        # submits the (hidden) URL field, so never trust it to replace the
+        # stored value; only fall back to the filename when content is empty
+        # or the two already agree, so a legitimate label/URL is preserved.
+        filename = old_filename
+        if not content or content == existing['content']:
+            content = existing['content'] or old_filename
+    elif content:
+        # File-backed type pointing at a URL rather than an upload (e.g. a
+        # YouTube video). All three renderers support this filename-less state.
+        filename = None
+    else:
+        # Neither a file, an existing file, nor a URL: this would persist a
+        # corrupt row that renders as /uploads/<empty>.
+        conn.close()
+        flash('A file or URL is required for this asset type')
+        return redirect(request.referrer or url_for('index'))
+
+    try:
+        conn.execute(
+            'UPDATE attachments SET title = ?, type = ?, content = ?, filename = ? WHERE id = ?',
+            (title, att_type, content, filename, attachment_id)
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        flash('Could not save this attachment')
+        return redirect(request.referrer or url_for('index'))
+    conn.close()
+
+    if old_filename and old_filename != filename:
+        _remove_upload(old_filename)
+
+    return redirect(request.referrer or url_for('index'))
+
+
+@app.route('/delete_attachment/<int:attachment_id>', methods=['POST'])
+def delete_attachment(attachment_id):
+    conn = get_db()
+    row = conn.execute('SELECT filename FROM attachments WHERE id = ?', (attachment_id,)).fetchone()
+    conn.execute('DELETE FROM attachments WHERE id = ?', (attachment_id,))
+    conn.commit()
+    conn.close()
+    if row and row['filename']:
+        _remove_upload(row['filename'])
+    return redirect(request.referrer or url_for('index'))
+
+
+@app.route('/attachment/<int:attachment_id>')
+def attachment(attachment_id):
+    # Full content is fetched on demand so the initial topic page only ships
+    # previews, not every richtext body. The modal and edit form call this.
+    conn = get_db()
+    row = conn.execute(
+        'SELECT id, statement_id, title, type, content, filename FROM attachments WHERE id = ?',
+        (attachment_id,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return {'error': 'not found'}, 404
+    payload = {
+        'id': row['id'],
+        'statement_id': row['statement_id'],
+        'title': row['title'],
+        'type': row['type'],
+        'kind': asset_kind(row['type'], row['filename']),
+        'content': row['content'],
+        'filename': row['filename'] or '',
+    }
+    return payload
+
+
+def _remove_upload(filename):
+    """Delete an uploaded file from disk, ignoring anything outside the upload dir."""
+    if not filename:
+        return
+    upload_dir = os.path.realpath(app.config['UPLOAD_FOLDER'])
+    path = os.path.realpath(os.path.join(upload_dir, filename))
+    if os.path.commonpath([upload_dir, path]) != upload_dir:
+        return
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
 
 @app.route('/update_topic', methods=['POST'])
 def update_topic():
@@ -236,9 +550,17 @@ def update_topic():
 @app.route('/delete_topic/<int:topic_id>', methods=['POST'])
 def delete_topic(topic_id):
     conn = get_db()
+    # Collect files before the cascade removes the rows that reference them.
+    rows = conn.execute('''
+        SELECT a.filename FROM attachments a
+        JOIN statements s ON a.statement_id = s.id
+        WHERE s.topic_id = ? AND a.filename IS NOT NULL
+    ''', (topic_id,)).fetchall()
     conn.execute('DELETE FROM topics WHERE id = ?', (topic_id,))
     conn.commit()
     conn.close()
+    for row in rows:
+        _remove_upload(row['filename'])
     return redirect(request.referrer or url_for('index'))
 
 @app.route('/update_domain', methods=['POST'])
@@ -258,15 +580,36 @@ def update_domain():
 @app.route('/delete_domain/<int:domain_id>', methods=['POST'])
 def delete_domain(domain_id):
     conn = get_db()
+    # `topics.domain_id` has no ON DELETE CASCADE, so with foreign keys enabled
+    # the children must be removed explicitly or the delete is rejected.
+    rows = conn.execute('''
+        SELECT a.filename FROM attachments a
+        JOIN statements s ON a.statement_id = s.id
+        JOIN topics t ON s.topic_id = t.id
+        WHERE t.domain_id = ? AND a.filename IS NOT NULL
+    ''', (domain_id,)).fetchall()
+    conn.execute('DELETE FROM topics WHERE domain_id = ?', (domain_id,))
     conn.execute('DELETE FROM domains WHERE id = ?', (domain_id,))
     conn.commit()
     conn.close()
+    for row in rows:
+        _remove_upload(row['filename'])
     return redirect(request.referrer or url_for('index'))
 
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    response = send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    # Uploads are user-controlled: never let the browser sniff a different
+    # content type, and keep them out of the page's script origin.
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Content-Security-Policy'] = "default-src 'none'; sandbox"
+    return response
 
 if __name__ == '__main__':
     init_db()
     app.run(debug=True, port=10000)
+else:
+    # Under a WSGI server (gunicorn app:app) the __main__ guard never runs, so
+    # the schema migration and bootstrapping must happen at import time or new
+    # asset types raise an uncaught IntegrityError on their first insert.
+    init_db()

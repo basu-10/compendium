@@ -1,0 +1,51 @@
+{# Reusable evidence/asset card.
+   Expects: att (attachment row), kind (render kind string).
+   Kinds: richtext | image | video | table | link | file
+   Markup is mirrored by renderEvidenceCard() in static/js/app.js - keep in sync. #}
+{% set kind = asset_kind(att.type, att.filename) %}
+<div class="evidence-card" data-kind="{{ kind }}"
+     data-id="{{ att.id }}"
+     data-title="{{ att.title }}"
+     data-type="{{ att.type }}"
+     data-preview="{{ preview_text(att.content) }}"
+     data-filename="{{ att.filename or '' }}">
+    <div class="evidence-card-header">
+        <span class="evidence-type">{{ kind }}</span>
+        {% set edit_modal_id = 'edit-attachment-' ~ att.id %}
+        {% set edit_url = url_for('update_attachment') %}
+        {% set delete_modal_id = 'delete-attachment' %}
+        {% set delete_url = url_for('delete_attachment', attachment_id=att.id) %}
+        {% set delete_title = 'Delete Evidence' %}
+        {% set delete_message = 'Are you sure you want to delete this evidence asset?' %}
+        {% set attach_url = none %}
+        {% include "components/hover_actions.html" with context %}
+    </div>
+
+    <h4>{{ att.title }}</h4>
+
+    <div class="evidence-preview">
+        {% if kind == 'image' %}
+            <img class="evidence-thumb"
+                 src="{{ url_for('uploaded_file', filename=att.filename or att.content) }}"
+                 alt="{{ att.title }}" loading="lazy">
+        {% elif kind == 'video' %}
+            {% if att.filename %}
+                <video class="evidence-thumb" preload="metadata" muted
+                       src="{{ url_for('uploaded_file', filename=att.filename) }}"></video>
+            {% else %}
+                <div class="evidence-placeholder" aria-hidden="true">&#9654;</div>
+                <p class="evidence-sub">{{ att.content }}</p>
+            {% endif %}
+        {% elif kind == 'table' %}
+            <div class="evidence-placeholder" aria-hidden="true">&#9636;</div>
+            <p class="evidence-sub">{{ att.filename or att.content }}</p>
+        {% elif kind == 'richtext' %}
+            <p class="evidence-sub">{{ preview_text(att.content) }}</p>
+        {% elif kind == 'link' %}
+            <p class="evidence-sub evidence-link">{{ att.content }}</p>
+        {% else %}
+            <div class="evidence-placeholder" aria-hidden="true">&#128196;</div>
+            <p class="evidence-sub">{{ att.filename or att.content }}</p>
+        {% endif %}
+    </div>
+</div>

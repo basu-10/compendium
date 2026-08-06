@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knowledge Vault</title>
+    <style>
+        /* Flat, Dark, Teal-Accented Theme */
+        :root {
+            --bg-color: #0b0c10;
+            --surface-color: #1f2833;
+            --accent-teal: #66fcf1;
+            --accent-teal-dark: #45a29e;
+            --text-main: #c5c6c7;
+            --text-heading: #ffffff;
+            --border-color: #333333;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.6;
+        }
+
+        /* Navigation */
+        header {
+            background-color: var(--surface-color);
+            padding: 1rem 2rem;
+            border-bottom: 2px solid var(--accent-teal-dark);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .nav-brand {
+            color: var(--accent-teal);
+            font-weight: bold;
+            font-size: 1.2rem;
+            cursor: pointer;
+        }
+
+        .breadcrumb {
+            display: flex;
+            gap: 0.5rem;
+            color: var(--text-main);
+            font-size: 0.9rem;
+        }
+
+        .breadcrumb span {
+            cursor: pointer;
+        }
+
+        .breadcrumb span:hover {
+            color: var(--accent-teal);
+        }
+
+        /* Views */
+        .view {
+            display: none;
+            padding: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .view.active {
+            display: block;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        h1, h2, h3 { color: var(--text-heading); margin-bottom: 1rem; }
+
+        /* Grid & Cards (Flat Design) */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .card {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            padding: 1.5rem;
+            cursor: pointer;
+            transition: border-color 0.2s, transform 0.2s;
+        }
+
+        .card:hover {
+            border-color: var(--accent-teal);
+        }
+
+        .tag {
+            display: inline-block;
+            background-color: var(--bg-color);
+            border: 1px solid var(--accent-teal-dark);
+            color: var(--accent-teal);
+            font-size: 0.75rem;
+            padding: 0.2rem 0.5rem;
+            margin-right: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        /* Topic Page - Split Screen */
+        .topic-intro {
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .split-layout {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .left-pane { flex: 1; }
+        .right-pane { flex: 1; }
+
+        .statement {
+            background-color: var(--bg-color);
+            border-left: 4px solid var(--accent-teal-dark);
+            padding: 1rem;
+            margin-bottom: 1rem;
+            cursor: pointer;
+        }
+
+        .statement.active-statement {
+            border-left-color: var(--accent-teal);
+            background-color: #151a21;
+        }
+
+        .evidence-card {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            padding: 1rem;
+            margin-bottom: 1rem;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .evidence-card:hover { border-color: var(--accent-teal); }
+        
+        .evidence-type {
+            font-size: 0.8rem;
+            color: var(--accent-teal-dark);
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.85);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.active { display: flex; }
+
+        .modal-content {
+            background-color: var(--surface-color);
+            border-top: 4px solid var(--accent-teal);
+            width: 80%;
+            max-width: 800px;
+            padding: 2rem;
+            position: relative;
+        }
+
+        .close-modal {
+            position: absolute;
+            top: 1rem; right: 1rem;
+            background: none; border: none;
+            color: var(--text-main);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        .close-modal:hover { color: var(--accent-teal); }
+
+        .filters {
+            margin-bottom: 2rem;
+            display: flex;
+            gap: 1rem;
+        }
+        
+        .filter-btn {
+            background: none;
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+        }
+        
+        .filter-btn:hover { border-color: var(--accent-teal); }
+    </style>
+</head>
+<body>
+
+    <!-- Global Navigation -->
+    <header>
+        <div class="nav-brand" onclick="navigateTo('main')">■ Vault</div>
+        <div class="breadcrumb" id="breadcrumb">
+            <span onclick="navigateTo('main')">Home</span>
+        </div>
+    </header>
+
+    <!-- MAIN PAGE: Domain Selection -->
+    <div id="view-main" class="view active">
+        <h1>Domains</h1>
+        <p style="margin-bottom: 2rem;">Select a knowledge domain to explore.</p>
+        <div class="grid">
+            <div class="card" onclick="navigateTo('domain', 'Computer Science')">
+                <h2>Computer Science</h2>
+                <p>Architecture, backend dev, AI implementations, and databases.</p>
+                <div class="tag">12 Topics</div>
+            </div>
+            <div class="card" onclick="navigateTo('domain', 'Markets & Economics')">
+                <h2>Markets & Economics</h2>
+                <p>Macro analysis, company 10-K reports, and asset classes.</p>
+                <div class="tag">8 Topics</div>
+            </div>
+            <div class="card" onclick="navigateTo('domain', 'Literature & Society')">
+                <h2>Literature & Society</h2>
+                <p>Classic texts, parallel readings, and sociopolitical deep dives.</p>
+                <div class="tag">15 Topics</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- DOMAIN PAGE: Topic Selection -->
+    <div id="view-domain" class="view">
+        <h1 id="domain-title">Domain Name</h1>
+        
+        <div class="filters">
+            <button class="filter-btn">Filter by Tag</button>
+            <button class="filter-btn">Sort by Date</button>
+        </div>
+
+        <div class="grid">
+            <div class="card" onclick="navigateTo('topic', 'Local LLM Deployment Strategies')">
+                <h3>Local LLM Deployment Strategies</h3>
+                <p>Mapping the constraints and solutions for running models on consumer hardware.</p>
+                <div class="tag">#AI</div> <div class="tag">#Hardware</div>
+                <div style="margin-top: 1rem; font-size: 0.85rem; color: var(--accent-teal-dark);">4 Statements • 9 Evidences</div>
+            </div>
+            <div class="card" onclick="navigateTo('topic', 'API Gateway Architectures')">
+                <h3>API Gateway Architectures</h3>
+                <p>Routing, authentication, and rate-limiting patterns for microservices.</p>
+                <div class="tag">#Backend</div> <div class="tag">#SystemDesign</div>
+                <div style="margin-top: 1rem; font-size: 0.85rem; color: var(--accent-teal-dark);">3 Statements • 5 Evidences</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOPIC PAGE: Statement to Evidence Mapping -->
+    <div id="view-topic" class="view">
+        <h1 id="topic-title">Topic Name</h1>
+        
+        <div class="topic-intro">
+            <p><strong>Overview:</strong> Running large models locally requires balancing VRAM constraints with quantization techniques. This topic maps the statements regarding hardware bottlenecks to the empirical evidence found in technical papers and repository documentations.</p>
+        </div>
+
+        <div class="split-layout">
+            <!-- Left Pane: Statements -->
+            <div class="left-pane">
+                <h3 style="color: var(--accent-teal-dark);">Claims & Statements</h3>
+                
+                <div class="statement active-statement" onclick="highlightEvidence('ev-group-1')">
+                    <strong>Statement 1:</strong> Memory bandwidth, not compute capability, is the primary bottleneck for inference speeds on consumer GPUs.
+                </div>
+                
+                <div class="statement" onclick="highlightEvidence('ev-group-2')">
+                    <strong>Statement 2:</strong> 4-bit quantization allows 7B parameter models to fit within 8GB VRAM without severe degradation in reasoning output.
+                </div>
+            </div>
+
+            <!-- Right Pane: Evidences -->
+            <div class="right-pane" id="evidence-container">
+                <h3 style="color: var(--accent-teal-dark);">Supporting Evidence</h3>
+                
+                <div class="evidence-card" onclick="openModal('PDF Report: Memory Bandwidth in LLMs', 'Analysis showing memory bottlenecks during token generation...', 'pdf')">
+                    <span class="evidence-type">PDF Report</span>
+                    <h4>Nvidia Technical Blog excerpt</h4>
+                    <p>Details regarding tensor core utilization vs memory bandwidth limitations.</p>
+                    <div><span class="tag">#Hardware</span></div>
+                </div>
+
+                <div class="evidence-card" onclick="openModal('Self-Written Article: Quantization Tests', 'Here are my benchmark results running Llama-3 8B on an RTX 3060...', 'article')">
+                    <span class="evidence-type">Original Article</span>
+                    <h4>My Benchmarks: 8GB VRAM constraints</h4>
+                    <p>Testing different GGUF formats and their respective tokens/sec speeds.</p>
+                    <div><span class="tag">#LocalLLM</span> <span class="tag">#Testing</span></div>
+                </div>
+                
+                <div class="evidence-card" onclick="openModal('YouTube Explainer: GGML vs GGUF', 'Video embedding would go here...', 'video')">
+                    <span class="evidence-type">Video Link</span>
+                    <h4>Format differences explained</h4>
+                    <p>Breakdown of how quantization is stored in memory.</p>
+                    <div><span class="tag">#Tutorial</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- EVIDENCE MODAL -->
+    <div class="modal-overlay" id="modal">
+        <div class="modal-content">
+            <button class="close-modal" onclick="closeModal()">×</button>
+            <span class="evidence-type" id="modal-type" style="display:block; margin-bottom: 1rem;">Type</span>
+            <h2 id="modal-title">Evidence Title</h2>
+            <div id="modal-body" style="margin-top: 1.5rem; background: var(--bg-color); padding: 1.5rem; border: 1px solid var(--border-color);">
+                Content loaded here...
+            </div>
+            <div style="margin-top: 2rem;">
+                <button class="filter-btn" style="border-color: var(--accent-teal); color: var(--accent-teal);">Open Source Link</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Navigation Logic ---
+        function navigateTo(viewId, title = '') {
+            // Hide all views
+            document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+            
+            // Show target view
+            document.getElementById('view-' + viewId).classList.add('active');
+            
+            // Update UI dynamically
+            const breadcrumb = document.getElementById('breadcrumb');
+            
+            if (viewId === 'main') {
+                breadcrumb.innerHTML = `<span onclick="navigateTo('main')">Home</span>`;
+            } 
+            else if (viewId === 'domain') {
+                document.getElementById('domain-title').innerText = title;
+                breadcrumb.innerHTML = `
+                    <span onclick="navigateTo('main')">Home</span> > 
+                    <span onclick="navigateTo('domain', '${title}')">${title}</span>
+                `;
+            }
+            else if (viewId === 'topic') {
+                document.getElementById('topic-title').innerText = title;
+                // Keep domain in breadcrumb, add topic
+                const currentDomain = document.getElementById('domain-title').innerText;
+                breadcrumb.innerHTML = `
+                    <span onclick="navigateTo('main')">Home</span> > 
+                    <span onclick="navigateTo('domain', '${currentDomain}')">${currentDomain}</span> >
+                    <span>${title}</span>
+                `;
+            }
+        }
+
+        // --- Split Screen Logic (Mocking the filtering of evidence) ---
+        function highlightEvidence(groupId) {
+            // In a real app, this would filter the right pane based on the statement's ID mapped to evidence IDs.
+            // For now, it just toggles the active state on the statements for visual feedback.
+            document.querySelectorAll('.statement').forEach(el => el.classList.remove('active-statement'));
+            event.currentTarget.classList.add('active-statement');
+        }
+
+        // --- Modal Logic ---
+        function openModal(title, content, type) {
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-body').innerText = content;
+            document.getElementById('modal-type').innerText = type + " Asset";
+            document.getElementById('modal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.remove('active');
+        }
+
+        // Close modal on outside click
+        window.onclick = function(event) {
+            const modal = document.getElementById('modal');
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+    </script>
+</body>
+</html>

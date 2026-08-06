@@ -30,6 +30,10 @@ function showEvidence(statementId) {
             preview = 'Uploaded document';
         } else if (att.type === 'video') {
             preview = escapeHtml(att.content);
+        } else if (att.type === 'text') {
+            // For text, show first 100 characters as preview
+            const previewText = att.content.length > 100 ? att.content.substring(0, 100) + '...' : att.content;
+            preview = escapeHtml(previewText);
         }
         
         html += '<div class="evidence-card" data-title="' + escapeAttr(att.title) + '" data-type="' + escapeAttr(att.type) + '" data-content="' + escapeAttr(att.content) + '" data-filename="' + escapeAttr(att.filename || '') + '">';
@@ -64,6 +68,8 @@ function openModal(title, type, content, filename) {
         body.innerHTML = '<a href="/uploads/' + escapeHtml(filename) + '" target="_blank" style="color: var(--accent-teal);">Download File</a>';
     } else if (type === 'video') {
         body.innerHTML = '<a href="' + escapeHtml(content) + '" target="_blank" style="color: var(--accent-teal);">Watch Video</a>';
+    } else if (type === 'text') {
+        body.innerHTML = '<pre style="background: var(--bg-color); padding: 1rem; border-radius: 4px; overflow-x: auto; white-space: pre-wrap;">' + escapeHtml(content) + '</pre>';
     } else {
         body.innerText = content || 'No content available.';
     }
@@ -78,7 +84,7 @@ function closeModal() {
 function toggleFileInput(statementId, type) {
     const fileGroup = document.getElementById('file-group-' + statementId);
     const urlGroup = document.getElementById('url-group-' + statementId);
-    if (type === 'link') {
+    if (type === 'link' || type === 'text') {
         fileGroup.style.display = 'none';
         urlGroup.style.display = 'block';
     } else {

@@ -3,7 +3,7 @@
 {% block title %}{{ topic.name }} - Knowledge Vault{% endblock %}
 
 {% block content %}
-<div class="view active topic-page">
+<div>
     {% set topic_edit_modal_id = 'edit-topic-' ~ topic.id %}
     {% set topic_delete_modal_id = 'delete-topic-' ~ topic.id %}
     <div class="section-header topic-header" id="topic-header">
@@ -18,25 +18,25 @@
         {% set delete_message = 'Are you sure you want to delete this topic and all its statements?' %}
         {% include "components/hover_actions.html" with context %}
     </div>
-    
+
     <div class="topic-intro" id="topic-intro">
         <p><strong>Overview:</strong> {{ topic.description or 'No description provided for this topic.' }}</p>
     </div>
-    
+
     <button class="filter-btn" onclick="openModal('add-statement-{{ topic.id }}')">+ New Statement</button>
-    
+
     <!-- Split Layout with Split.js -->
     <div class="split-layout" id="split-layout">
         <div class="left-pane" id="claims-pane">
             <div class="pane-header">
-                <h3 style="color: var(--accent-teal-dark);">Claims & Statements</h3>
+                <h3>Claims & Statements</h3>
             </div>
             {% if statements %}
                 {% for statement in statements %}
                 {% set stmt_edit_modal_id = 'edit-statement-' ~ statement.id %}
                 {% set stmt_delete_modal_id = 'delete-statement-' ~ statement.id %}
                 {% set attach_modal_id = 'attach-' ~ statement.id %}
-                <div class="statement {% if loop.first %}active-statement{% endif %}" 
+                <div class="statement {% if loop.first %}active-statement{% endif %}"
                      data-statement-id="{{ statement.id }}"
                      onclick="showEvidence({{ statement.id }})">
                     <div class="statement-content">
@@ -53,7 +53,7 @@
                     {% set attach_modal_id = attach_modal_id %}
                     {% set attach_url = url_for('create_attachment') %}
                     {% include "components/hover_actions.html" with context %}
-                    
+
                     {% if statement.id in attachments_by_statement %}
                     <div class="attachments-list">
                         {% for att in attachments_by_statement[statement.id] %}
@@ -85,14 +85,13 @@
                 </div>
             {% endif %}
         </div>
-        
-        <div class="gutter" id="gutter"></div>
-        
+
+
         <div class="right-pane" id="evidence-pane">
             <div class="pane-header">
-                <h3 style="color: var(--accent-teal-dark);">Supporting Evidence</h3>
+                <h3>Supporting Evidence</h3>
             </div>
-            <div id="evidence-content">
+            <div class="evidence-grid" id="evidence-content">
                 {% if statements %}
                     {% set first_id = statements[0].id %}
                     {% if first_id in attachments_by_statement %}
@@ -129,37 +128,37 @@
             </div>
         </div>
     </div>
-    
+
     {% set add_stmt_modal_id = 'add-statement-' ~ topic.id %}
     {% include "modals/add_statement.html" with context %}
-    
+
     {% for statement in statements %}
         {% set modal_id = 'attach-' ~ statement.id %}
         {% set statement_id = statement.id %}
         {% include "modals/attachment_form.html" with context %}
-        
+
         {% set modal_id = 'edit-statement-' ~ statement.id %}
         {% set current_text = statement.text %}
         {% include "modals/edit_statement.html" with context %}
-        
+
         {% set modal_id = 'delete-statement-' ~ statement.id %}
         {% include "modals/confirm_delete.html" with context %}
     {% endfor %}
-    
+
     {% set modal_id = topic_edit_modal_id %}
     {% set current_name = topic.name %}
     {% set current_description = topic.description or '' %}
     {% include "modals/edit_topic.html" with context %}
-    
+
     {% set modal_id = topic_delete_modal_id %}
     {% include "modals/confirm_delete.html" with context %}
-    
+
     <div class="modal-overlay" id="evidence-modal">
         <div class="modal-content">
             <button class="close-modal" onclick="closeEvidenceModal()">&times;</button>
             <span class="evidence-type" id="modal-type" style="display: block; margin-bottom: 1rem;"></span>
             <h2 id="modal-title"></h2>
-            <div id="modal-body" style="margin-top: 1.5rem; background: var(--bg-color); padding: 1.5rem; border: 1px solid var(--border-color);">
+            <div id="modal-body" style="margin-top: 1.5rem; background: var(--bg-muted); padding: 1.5rem; border: 1px solid var(--border); border-radius: 8px;">
             </div>
         </div>
     </div>
@@ -182,13 +181,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 localStorage.setItem('splitSizes', JSON.stringify(split.getSizes()));
             }
         });
-        
+
         const savedSizes = JSON.parse(localStorage.getItem('splitSizes'));
         if (savedSizes) {
             split.setSizes(savedSizes);
         }
     }
-    
+
     initHoverActions();
     initMobileAccordion();
 });

@@ -3,31 +3,74 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Knowledge Vault{% endblock %}</title>
+    <title>{% block title %}Compendium{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     {% block head %}{% endblock %}
 </head>
 <body>
-    <header>
-        <div class="nav-brand" onclick="window.location.href='{{ url_for('index') }}'">&#9632; Vault</div>
-        <div class="breadcrumb" id="breadcrumb">
-            <a href="{{ url_for('index') }}">Home</a>{% if domain %}
-            &gt; <a href="{{ url_for('domain', domain_id=domain.id) }}">{{ domain.name }}</a>{% endif %}{% if topic %}
-            &gt; <span>{{ topic.name }}</span>{% endif %}
-        </div>
-    </header>
-
-    {% with messages = get_flashed_messages() %}
-        {% if messages %}
-            <div class="flash-messages">
-                {% for msg in messages %}
-                    <div class="flash">{{ msg }}</div>
-                {% endfor %}
+    <div class="app-layout">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-brand">Project Alpha</div>
+                <div class="sidebar-subtitle">Evidence Mapping</div>
             </div>
-        {% endif %}
-    {% endwith %}
+            <nav class="sidebar-nav">
+                <a href="{{ url_for('index') }}" class="sidebar-link active">
+                    <span class="sidebar-icon">&#9632;</span> Overview
+                </a>
+                <a href="#" class="sidebar-link">
+                    <span class="sidebar-icon">&#9632;</span> Claims
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <a href="#" class="sidebar-link">
+                    <span class="sidebar-icon">&#9632;</span> Documentation
+                </a>
+                <div class="sidebar-avatar">&#9632;</div>
+            </div>
+        </aside>
 
-    {% block content %}{% endblock %}
+        <div class="main-area">
+            <header class="top-header">
+                <nav class="top-nav">
+                    <a href="{{ url_for('index') }}" class="top-nav-link {% if request.endpoint == 'index' %}active{% endif %}">Archive</a>
+                    <a href="#" class="top-nav-link {% if request.endpoint in ['domain', 'topic'] %}active{% endif %}">Claims</a>
+                </nav>
+                <div class="top-actions">
+                    <div class="search-box">
+                        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+                        <input type="text" placeholder="Search evidence...">
+                    </div>
+                    <button class="icon-btn" title="Notifications">&#128276;</button>
+                    <button class="icon-btn" title="Settings">&#9881;</button>
+                    <button class="btn-export">Export</button>
+                </div>
+            </header>
+
+            <div class="breadcrumb-bar">
+                <a href="{{ url_for('index') }}">Home</a>{% if domain %}
+                &gt; <a href="{{ url_for('domain', domain_id=domain.id) }}">{{ domain.name }}</a>{% endif %}{% if topic %}
+                &gt; <span>{{ topic.name }}</span>{% endif %}
+            </div>
+
+            <div class="page-content">
+                {% with messages = get_flashed_messages() %}
+                    {% if messages %}
+                        <div class="flash-messages">
+                            {% for msg in messages %}
+                                <div class="flash">{{ msg }}</div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+
+                {% block content %}{% endblock %}
+            </div>
+        </div>
+    </div>
 
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     {% block scripts %}{% endblock %}

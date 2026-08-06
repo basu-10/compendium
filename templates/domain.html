@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}{{ domain.name }} - Knowledge Vault{% endblock %}
+
+{% block content %}
+<div class="view active">
+    <div class="section-header">
+        <h1>{{ domain.name }}</h1>
+        <button class="filter-btn" onclick="document.getElementById('add-topic-form').style.display='block'">+ New Topic</button>
+    </div>
+    <p style="margin-bottom: 2rem;">{{ domain.description }}</p>
+    
+    <form id="add-topic-form" class="add-form" method="POST" action="{{ url_for('create_topic') }}" style="display: none;">
+        <input type="hidden" name="domain_id" value="{{ domain.id }}">
+        <div class="form-group">
+            <label for="topic-name">Topic Name</label>
+            <input type="text" id="topic-name" name="name" required>
+        </div>
+        <div class="form-group">
+            <label for="topic-desc">Description (optional)</label>
+            <textarea id="topic-desc" name="description"></textarea>
+        </div>
+        <button type="submit" class="btn-primary">Create Topic</button>
+    </form>
+    
+    {% if topics %}
+    <div class="grid">
+        {% for topic in topics %}
+        <a href="{{ url_for('topic', topic_id=topic.id) }}" class="card">
+            <h3>{{ topic.name }}</h3>
+            <p>{{ topic.description or 'No description' }}</p>
+            <div class="stat-count">
+                {{ topic.statement_count }} Statements &bull; {{ topic.attachment_count }} Evidences
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>No topics yet. Click "+ New Topic" to create your first topic in this domain.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

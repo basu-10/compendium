@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}Knowledge Vault - Home{% endblock %}
+
+{% block content %}
+<div class="view active">
+    <h1>Domains</h1>
+    <p style="margin-bottom: 2rem;">Select a knowledge domain to explore.</p>
+    <div class="grid">
+        {% for domain in domains %}
+        <a href="{{ url_for('domain', domain_id=domain.id) }}" class="card">
+            <h2>{{ domain.name }}</h2>
+            <p>{{ domain.description }}</p>
+            <div class="tag">{{ domain.topic_count }} Topics</div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

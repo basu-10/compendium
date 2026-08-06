@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}{{ topic.name }} - Knowledge Vault{% endblock %}
+
+{% block content %}
+<div class="view active">
+    <div class="section-header">
+        <h1>{{ topic.name }}</h1>
+        <button class="filter-btn" onclick="document.getElementById('add-statement-form').style.display='block'">+ New Statement</button>
+    </div>
+    
+    <div class="topic-intro">
+        <p><strong>Overview:</strong> {{ topic.description or 'No description provided for this topic.' }}</p>
+    </div>
+    
+    <form id="add-statement-form" class="add-form" method="POST" action="{{ url_for('create_statement') }}" style="display: none;">
+        <input type="hidden" name="topic_id" value="{{ topic.id }}">
+        <div class="form-group">
+            <label for="statement-text">Statement</label>
+            <textarea id="statement-text" name="text" required></textarea>
+        </div>
+        <button type="submit" class="btn-primary">Add Statement</button>
+    </form>
+    
+    <div class="split-layout">
+        <div class="left-pane">
+            <h3 style="color: var(--accent-teal-dark);">Claims & Statements</h3>
+            
+            {% if statements %}
+                {% for statement in statements %}
+                <div class="statement {% if loop.first %}active-statement{% endif %}" 
+                     data-statement-id="{{ statement.id }}"
+                     onclick="showEvidence({{ statement.id }})">
+                    <div class="statement-header">
+                        <div class="statement-text">
+                            <strong>Statement {{ loop.index }}:</strong> {{ statement.text }}
+                        </div>
+                        <button class="filter-btn" style="margin-left: auto; flex-shrink: 0;" 
+                                onclick="event.stopPropagation(); document.getElementById('attach-form-{{ statement.id }}').style.display='block'">+ Attach</button>
+                    </div>
+                    
+                    <form id="attach-form-{{ statement.id }}" class="add-form" method="POST" action="{{ url_for('create_attachment') }}" enctype="multipart/form-data" style="display: none; margin-top: 1rem;">
+                        <input type="hidden" name="statement_id" value="{{ statement.id }}">
+                        <div class="form-group">
+                            <label for="att-title-{{ statement.id }}">Title</label>
+                            <input type="text" id="att-title-{{ statement.id }}" name="title" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="att-type-{{ statement.id }}">Type</label>
+                            <select id="att-type-{{ statement.id }}" name="type" onchange="toggleFileInput({{ statement.id }}, this.value)">
+                                <option value="link">Link</option>
+                                <option value="document">Document</option>
+                                <option value="image">Image</option>
+                                <option value="video">Video</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="file-group-{{ statement.id }}" style="display: none;">
+                            <label for="att-file-{{ statement.id }}">Upload File</label>
+                            <input type="file" id="att-file-{{ statement.id }}" name="file">
+                        </div>
+                        <div class="form-group" id="url-group-{{ statement.id }}">
+                            <label for="att-content-{{ statement.id }}">URL / Content</label>
+                            <input type="text" id="att-content-{{ statement.id }}" name="content" placeholder="https://...">
+                        </div>
+                        <button type="submit" class="btn-primary">Add Attachment</button>
+                    </form>
+                    
+                    {% if statement.id in attachments_by_statement %}
+                    <div class="attachments-list">
+                        {% for att in attachments_by_statement[statement.id] %}
+                        <div class="attachment-item">
+                            <div class="att-title">{{ att.title }}</div>
+                            <div class="att-meta">
+                                <span class="evidence-type">{{ att.type }}</span>
+                                {% if att.type == 'link' %}
+                                    &bull; <a href="{{ att.content }}" target="_blank">Open Link</a>
+                                {% elif att.type == 'image' %}
+                                    &bull; <a href="{{ url_for('uploaded_file', filename=att.content) }}" target="_blank">View Image</a>
+                                {% elif att.type == 'document' %}
+                                    &bull; <a href="{{ url_for('uploaded_file', filename=att.content) }}" target="_blank">Download</a>
+                                {% elif att.type == 'video' %}
+                                    &bull; <a href="{{ att.content }}" target="_blank">Watch Video</a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="empty-state">
+                    <p>No statements yet. Click "+ New Statement" to add your first claim.</p>
+                </div>
+            {% endif %}
+        </div>
+        
+        <div class="right-pane" id="evidence-container">
+            <h3 style="color: var(--accent-teal-dark);">Supporting Evidence</h3>
+            <div id="evidence-content">
+                {% if statements %}
+                    {% set first_id = statements[0].id %}
+                    {% if first_id in attachments_by_statement %}
+                        {% for att in attachments_by_statement[first_id] %}
+                        <div class="evidence-card" onclick="openModal('{{ att.title|escape }}', '{{ att.type }}', '{{ att.content|escape }}', '{{ att.filename or '' }}')">
+                            <span class="evidence-type">{{ att.type }}</span>
+                            <h4>{{ att.title }}</h4>
+                            <p>
+                                {% if att.type == 'link' %}
+                                    {{ att.content }}
+                                {% elif att.type == 'image' %}
+                                    Uploaded image
+                                {% elif att.type == 'document' %}
+                                    Uploaded document
+                                {% elif att.type == 'video' %}
+                                    {{ att.content }}
+                                {% endif %}
+                            </p>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="empty-state">
+                            <p>No evidence attached to the selected statement.</p>
+                        </div>
+                    {% endif %}
+                {% else %}
+                    <div class="empty-state">
+                        <p>Select a statement to view its evidence.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Evidence Data as JS Object -->
+<script>
+    const evidenceData = {
+        {% for statement in statements %}
+            {{ statement.id }}: [
+                {% if statement.id in attachments_by_statement %}
+                    {% for att in attachments_by_statement[statement.id] %}
+                    {
+                        id: {{ att.id }},
+                        title: {{ att.title|tojson }},
+                        type: {{ att.type|tojson }},
+                        content: {{ att.content|tojson }},
+                        filename: {{ att.filename|tojson or 'null' }}
+                    }{% if not loop.last %},{% endif %}
+                    {% endfor %}
+                {% endif %}
+            ]{% if not loop.last %},{% endif %}
+        {% endfor %}
+    };
+</script>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal">
+    <div class="modal-content">
+        <button class="close-modal" onclick="closeModal()">&times;</button>
+        <span class="evidence-type" id="modal-type" style="display: block; margin-bottom: 1rem;"></span>
+        <h2 id="modal-title"></h2>
+        <div id="modal-body" style="margin-top: 1.5rem; background: var(--bg-color); padding: 1.5rem; border: 1px solid var(--border-color);">
+        </div>
+    </div>
+</div>
+{% endblock %}

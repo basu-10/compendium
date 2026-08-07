@@ -384,12 +384,28 @@ p {
     flex: 1;
     min-width: 0;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
 }
 
 .right-pane {
     flex: 1;
     min-width: 0;
     overflow-y: auto;
+}
+
+/* Scroll container shared by the statement list and its trailing add row, so
+   the add row can be sticky relative to the list rather than the viewport. */
+.pane-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+.statement-list {
+    display: flex;
+    flex-direction: column;
 }
 
 .pane-header {
@@ -412,6 +428,7 @@ p {
 
 /* Statements */
 .statement {
+    position: relative;
     background-color: var(--bg-surface);
     border: 1px solid var(--border);
     border-left: 4px solid var(--text-muted);
@@ -419,7 +436,7 @@ p {
     margin-bottom: 0.75rem;
     border-radius: 6px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
 }
 
 .statement:hover {
@@ -427,10 +444,23 @@ p {
     background-color: #f9fafb;
 }
 
+.statement:focus-visible {
+    outline: 2px solid var(--text-primary);
+    outline-offset: 2px;
+}
+
 .statement.active-statement {
     border-left-color: var(--text-primary);
     background-color: #f9fafb;
     border-color: #d1d5db;
+}
+
+/* Edit mode is a transient state entered by the edit button or a double
+   click; it is what reveals the delete button. */
+.statement.edit-mode,
+.evidence-card.edit-mode {
+    border-color: var(--text-primary);
+    box-shadow: 0 0 0 2px rgba(17, 24, 39, 0.08);
 }
 
 .statement-text {
@@ -442,6 +472,71 @@ p {
 .statement-text strong {
     color: var(--text-primary);
     font-weight: 600;
+}
+
+/* Collapsed rows clamp to a few lines so the list stays scannable; expanding
+   grows the row vertically only, and caps at a height past which it scrolls. */
+.statement .statement-text {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.statement.expanded .statement-text {
+    display: block;
+    overflow-y: auto;
+    max-height: 40vh;
+    overscroll-behavior: contain;
+}
+
+/* Add-row: the next empty slot in the statement list. Matched to the rows in
+   size and rhythm but dashed and muted so it never reads as a primary button.
+   Sticky to the bottom of the pane so it stays reachable as the list grows. */
+.add-row {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    width: 100%;
+    padding: 1rem;
+    margin-top: auto;
+    font-family: inherit;
+    font-size: 0.95rem;
+    text-align: left;
+    color: var(--text-muted);
+    background-color: var(--bg-body);
+    border: 1px dashed #d1d5db;
+    border-left: 4px dashed #d1d5db;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s, background-color 0.2s;
+}
+
+.add-row:hover,
+.add-row:focus-visible {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+    border-left-color: var(--text-primary);
+    background-color: var(--bg-surface);
+}
+
+.add-row:focus-visible {
+    outline: 2px solid var(--text-primary);
+    outline-offset: 2px;
+}
+
+.add-row-plus {
+    font-size: 1.15rem;
+    line-height: 1;
+    font-weight: 400;
+}
+
+.add-row-label {
+    font-weight: 500;
 }
 
 /* Evidence Grid */
@@ -458,7 +553,6 @@ p {
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 1rem;
-    margin-bottom: 0.75rem;
     cursor: pointer;
     display: flex;
     flex-direction: column;
@@ -468,6 +562,79 @@ p {
 .evidence-card:hover {
     border-color: #d1d5db;
     box-shadow: var(--shadow);
+}
+
+.evidence-card:focus-visible {
+    outline: 2px solid var(--text-primary);
+    outline-offset: 2px;
+}
+
+/* Expanding a card grows it both ways: it spans every grid column and its
+   body grows until the cap, past which the full content scrolls. */
+.evidence-card.expanded {
+    grid-column: 1 / -1;
+    border-color: #d1d5db;
+    box-shadow: var(--shadow-md);
+}
+
+.evidence-card.expanded .evidence-preview {
+    display: none;
+}
+
+.evidence-full {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+    max-height: 55vh;
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+
+.evidence-full .richtext-body {
+    background: var(--bg-muted);
+}
+
+/* Add-card: a placeholder tile in the evidence grid, sized like a real card
+   so the grid rhythm holds, but dashed and muted so it reads as an empty slot. */
+.add-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    min-height: 150px;
+    padding: 1rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    background-color: transparent;
+    border: 1px dashed #d1d5db;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s, background-color 0.2s;
+}
+
+.add-card:hover,
+.add-card:focus-visible {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+    background-color: var(--bg-surface);
+}
+
+.add-card:focus-visible {
+    outline: 2px solid var(--text-primary);
+    outline-offset: 2px;
+}
+
+.add-card-plus {
+    font-size: 1.75rem;
+    line-height: 1;
+    font-weight: 300;
+}
+
+.add-card-label {
+    font-weight: 500;
+    text-align: center;
 }
 
 /* Card header holds the type badge and the hover action buttons */
@@ -916,6 +1083,24 @@ p {
     .hover-actions {
         opacity: 1;
     }
+}
+
+/* Destructive actions are only offered once the item is explicitly in edit
+   mode, so a stray hover-click can never reach delete. Hidden rather than
+   disabled so it does not occupy space in the toolbar. */
+.icon-btn.delete-btn.gated {
+    display: none;
+}
+
+.edit-mode > .hover-actions .icon-btn.delete-btn.gated,
+.edit-mode .evidence-card-header .icon-btn.delete-btn.gated {
+    display: flex;
+}
+
+/* Edit mode is deliberate, so keep its toolbar visible without a hover. */
+.edit-mode > .hover-actions,
+.edit-mode .evidence-card-header .hover-actions {
+    opacity: 1;
 }
 
 .icon-btn {

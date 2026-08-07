@@ -14,6 +14,9 @@ function closeModal(modalId) {
     if (modal) {
         modal.classList.remove('active');
         document.body.style.overflow = '';
+        // Edit mode is what reveals an item's delete button, so it must not
+        // outlive the editor it was opened for.
+        if (typeof clearEditModes === 'function') clearEditModes(null);
     }
 }
 
@@ -66,25 +69,186 @@ function initEvidenceCards() {
     document.querySelectorAll('#evidence-content .evidence-card').forEach(function(card) {
         if (card.dataset.bound === '1') return;
         card.dataset.bound = '1';
-        card.addEventListener('click', function() {
-            openEvidenceModal({
-                id: this.dataset.id,
-                title: this.dataset.title,
-                type: this.dataset.type,
-                filename: this.dataset.filename,
-                preview: this.dataset.preview,
-            });
+        bindItemInteractions(card, {
+            expand: function() { toggleEvidenceCard(card); },
+            edit: function() { editEvidence(card.dataset.id); },
         });
-        // Wire the edit button (emitted by hover_actions.html) to lazy-load
-        // the full content into the edit form on open.
-        const editBtn = card.querySelector('.hover-actions button[aria-label="Edit"]');
-        if (editBtn && card.dataset.id) {
-            editBtn.addEventListener('click', function(event) {
-                event.stopPropagation();
-                populateEditForm(card.dataset.id);
-            });
+    });
+}
+
+// --- Shared single-click / double-click interaction model ---
+// Single click expands the item in place; double click opens its editor. A
+// click is therefore deferred by DOUBLE_CLICK_DELAY so a second click can
+// cancel it -- otherwise every double click would also toggle the expansion.
+const DOUBLE_CLICK_DELAY = 250;
+
+function bindItemInteractions(el, handlers) {
+    let clickTimer = null;
+
+    el.addEventListener('click', function(event) {
+        // Buttons inside the row (edit/delete/attach) own their own behaviour.
+        if (event.target.closest('.hover-actions, a, button')) return;
+        if (clickTimer !== null) return; // second click; dblclick will fire
+        clickTimer = setTimeout(function() {
+            clickTimer = null;
+            handlers.expand();
+        }, DOUBLE_CLICK_DELAY);
+    });
+
+    el.addEventListener('dblclick', function(event) {
+        if (event.target.closest('.hover-actions, a, button')) return;
+        // Cancel the pending single-click expansion so a double click only edits.
+        if (clickTimer !== null) {
+            clearTimeout(clickTimer);
+            clickTimer = null;
+        }
+        // Double click also selects the text under the cursor; clear it so the
+        // row does not stay highlighted behind the modal.
+        const selection = window.getSelection();
+        if (selection) selection.removeAllRanges();
+        handlers.edit();
+    });
+
+    // Keyboard parity: Enter expands, and the row is focusable via tabindex.
+    el.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+            if (event.target !== el) return;
+            event.preventDefault();
+            handlers.expand();
         }
     });
+
+    // The edit button and double click must run the same code path.
+    const editBtn = el.querySelector('.hover-actions .edit-btn');
+    if (editBtn) {
+        editBtn.addEventListener('click', function(event) {
+            event.stopPropagation();
+            event.preventDefault();
+            handlers.edit();
+        });
+    }
+
+    // Delete is only reachable once the item is in edit mode. The CSS hides
+    // the button, but guard here too so a stale/forced click cannot fire.
+    const deleteBtn = el.querySelector('.hover-actions .delete-btn.gated');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', function(event) {
+            if (!el.classList.contains('edit-mode')) {
+                event.stopImmediatePropagation();
+                event.preventDefault();
+            }
+        }, true);
+    }
+}
+
+// Entering edit mode reveals the delete button and keeps the item visually
+// marked while its modal is open.
+function setEditMode(el, on) {
+    if (!el) return;
+    el.classList.toggle('edit-mode', !!on);
+}
+
+// Only one item is ever in edit mode, so clear the rest when a new one opens.
+function clearEditModes(except) {
+    document.querySelectorAll('.edit-mode').forEach(function(el) {
+        if (el !== except) el.classList.remove('edit-mode');
+    });
+}
+
+// --- Statements: expand in place / edit ---
+function initStatements() {
+    document.querySelectorAll('#statement-list .statement').forEach(function(row) {
+        if (row.dataset.bound === '1') return;
+        row.dataset.bound = '1';
+        bindItemInteractions(row, {
+            expand: function() { toggleStatement(row); },
+            edit: function() { editStatement(row); },
+        });
+    });
+}
+
+// Statements grow vertically only: the full text is already in the DOM, so
+// expanding just lifts the line clamp and shows the evidence for the row.
+function toggleStatement(row) {
+    const id = row.dataset.statementId;
+    const willExpand = !row.classList.contains('expanded');
+
+    // Selecting a statement always drives the right-hand evidence pane, even
+    // when collapsing, so the panes cannot fall out of sync.
+    showEvidence(id);
+
+    document.querySelectorAll('#statement-list .statement.expanded').forEach(function(other) {
+        if (other !== row) other.classList.remove('expanded');
+    });
+    row.classList.toggle('expanded', willExpand);
+    row.setAttribute('aria-expanded', willExpand ? 'true' : 'false');
+}
+
+function editStatement(row) {
+    clearEditModes(row);
+    setEditMode(row, true);
+    const modalId = row.dataset.editModal;
+    if (modalId) openModal(modalId);
+}
+
+// --- Evidence cards: expand in place / edit ---
+// Cards expand both ways: they span the full grid width and grow taller, up to
+// a capped height after which the body scrolls.
+function toggleEvidenceCard(card) {
+    const willExpand = !card.classList.contains('expanded');
+
+    document.querySelectorAll('#evidence-content .evidence-card.expanded').forEach(function(other) {
+        if (other !== card) collapseEvidenceCard(other);
+    });
+
+    if (!willExpand) {
+        collapseEvidenceCard(card);
+        return;
+    }
+
+    card.classList.add('expanded');
+    card.setAttribute('aria-expanded', 'true');
+
+    const full = card.querySelector('.evidence-full');
+    if (!full) return;
+    full.hidden = false;
+
+    // Content is fetched once and cached in the DOM for later re-expansions.
+    if (full.dataset.loaded === '1') return;
+    full.innerHTML = '';
+    full.appendChild(subText('Loading…'));
+
+    fetch('/attachment/' + card.dataset.id)
+        .then(function(r) { return r.json(); })
+        .then(function(att) {
+            full.dataset.loaded = '1';
+            renderEvidenceBody(full, att.title, att.type, att.filename,
+                               att.content != null ? att.content : (card.dataset.preview || ''));
+        })
+        .catch(function() {
+            renderEvidenceBody(full, card.dataset.title, card.dataset.type,
+                               card.dataset.filename, card.dataset.preview || '');
+        });
+}
+
+function collapseEvidenceCard(card) {
+    card.classList.remove('expanded');
+    card.setAttribute('aria-expanded', 'false');
+    const full = card.querySelector('.evidence-full');
+    if (full) full.hidden = true;
+}
+
+function editEvidence(attachmentId) {
+    const card = document.querySelector('.evidence-card[data-id="' + attachmentId + '"]');
+    clearEditModes(card);
+    setEditMode(card, true);
+    populateEditForm(attachmentId);
+    openModal('edit-attachment-' + attachmentId);
+}
+
+// Attach evidence to whichever statement the evidence pane is showing.
+function openAttachModal(statementId) {
+    if (statementId) openModal('attach-' + statementId);
 }
 
 // --- Mobile Accordion ---
@@ -153,33 +317,9 @@ function setGroupActive(group, active) {
     });
 }
 
-// --- Evidence Modal ---
-// Accepts the attachment object so full content can be fetched on demand
-// (the initial payload ships only a preview).
-function openEvidenceModal(att) {
-    const id = att.id;
-    const title = att.title;
-    const type = att.type;
-    const filename = att.filename || '';
-    document.getElementById('modal-title').innerText = title;
-    const kind = assetKind(type, filename);
-    document.getElementById('modal-type').innerText = kind.toUpperCase() + ' Asset';
-    const body = document.getElementById('modal-body');
-    body.innerHTML = '';
-    body.appendChild(subText('Loading…'));
-    document.getElementById('evidence-modal').classList.add('active');
-
-    fetch('/attachment/' + id)
-        .then(function(r) { return r.json(); })
-        .then(function(full) {
-            renderEvidenceBody(body, title, type, filename,
-                               full.content != null ? full.content : (att.preview || ''));
-        })
-        .catch(function() {
-            renderEvidenceBody(body, title, type, filename, att.preview || '');
-        });
-}
-
+// --- Evidence rendering ---
+// Draws an attachment's full body into `body`. Shared by the in-place card
+// expansion for every asset kind.
 function renderEvidenceBody(body, title, type, filename, content) {
     body.innerHTML = '';
     const fileUrl = filename ? '/uploads/' + encodeURIComponent(filename) : '';
@@ -238,10 +378,6 @@ function buildLink(url, text) {
     return a;
 }
 
-function closeEvidenceModal() {
-    document.getElementById('evidence-modal').classList.remove('active');
-}
-
 // --- Asset kind mapping (mirrors asset_kind() in app.py) ---
 const TYPE_TO_KIND = {
     link: 'link',
@@ -291,6 +427,11 @@ function renderEvidenceCard(att) {
     card.dataset.title = att.title;
     card.dataset.type = att.type;
     card.dataset.filename = filename;
+    card.dataset.preview = att.preview != null ? att.preview : '';
+    card.dataset.editModal = 'edit-attachment-' + att.id;
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-expanded', 'false');
 
     // Header: type badge (icon + label) + hover actions
     const header = document.createElement('div');
@@ -317,20 +458,16 @@ function renderEvidenceCard(att) {
 
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
-    editBtn.className = 'icon-btn';
+    editBtn.className = 'icon-btn edit-btn';
     editBtn.title = 'Edit';
     editBtn.setAttribute('aria-label', 'Edit');
+    editBtn.dataset.editModal = 'edit-attachment-' + att.id;
     editBtn.textContent = '\u270E';
-    editBtn.addEventListener('click', function(event) {
-        event.stopPropagation();
-        populateEditForm(att.id);
-        openModal('edit-attachment-' + att.id);
-    });
     actions.appendChild(editBtn);
 
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
-    deleteBtn.className = 'icon-btn delete-btn';
+    deleteBtn.className = 'icon-btn delete-btn gated';
     deleteBtn.title = 'Delete';
     deleteBtn.setAttribute('aria-label', 'Delete');
     deleteBtn.textContent = '\uD83D\uDDD1';
@@ -393,13 +530,21 @@ function renderEvidenceCard(att) {
 
     card.appendChild(preview);
 
+    // Filled on first expand; mirrors the server-rendered card.
+    const full = document.createElement('div');
+    full.className = 'evidence-full';
+    full.hidden = true;
+    card.appendChild(full);
+
     // Mirror initHoverActions(): on touch devices, reveal the actions on tap.
     card.addEventListener('touchstart', function() {
         card.querySelector('.hover-actions').classList.add('touch-visible');
     }, { passive: true });
 
-    card.addEventListener('click', function() {
-        openEvidenceModal(att);
+    card.dataset.bound = '1';
+    bindItemInteractions(card, {
+        expand: function() { toggleEvidenceCard(card); },
+        edit: function() { editEvidence(att.id); },
     });
 
     return card;
@@ -437,7 +582,7 @@ function populateEditForm(attachmentId) {
         .catch(function() {});
 }
 
-// --- Statement click -> evidence panel ---
+// --- Statement selection -> evidence panel ---
 function showEvidence(statementId) {
     highlightEvidence(statementId);
     const container = document.getElementById('evidence-content');
@@ -446,14 +591,37 @@ function showEvidence(statementId) {
     const items = evidenceData[statementId] || evidenceData[String(statementId)] || [];
     container.innerHTML = '';
 
-    if (items.length === 0) {
-        container.innerHTML = '<div class="empty-state"><p>No evidence attached to the selected statement.</p></div>';
-        return;
-    }
-
     items.forEach(function(att) {
         container.appendChild(renderEvidenceCard(att));
     });
+
+    // The "add evidence" tile always trails the cards and targets whichever
+    // statement is selected, so it doubles as the empty state for a statement
+    // that has no evidence yet.
+    container.appendChild(buildAddEvidenceCard(statementId, items.length === 0));
+}
+
+function buildAddEvidenceCard(statementId, isEmpty) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'add-card';
+    btn.dataset.statementId = statementId;
+
+    const plus = document.createElement('span');
+    plus.className = 'add-card-plus';
+    plus.setAttribute('aria-hidden', 'true');
+    plus.textContent = '+';
+    btn.appendChild(plus);
+
+    const label = document.createElement('span');
+    label.className = 'add-card-label';
+    label.textContent = isEmpty ? 'Add the first piece of evidence' : 'Add evidence';
+    btn.appendChild(label);
+
+    btn.addEventListener('click', function() {
+        openAttachModal(statementId);
+    });
+    return btn;
 }
 
 // --- Existing helpers ---

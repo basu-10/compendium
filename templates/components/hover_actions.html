@@ -1,10 +1,14 @@
-{# Reusable hover action toolbar #}
+{# Reusable hover action toolbar.
+
+   `delete_gated` marks the delete button as only usable once the row/card is
+   in edit mode; the CSS hides it until then, and the JS enforces the same rule
+   so it cannot be triggered while hidden. #}
 <div class="hover-actions">
     {% if edit_url %}
-    <button type="button" class="icon-btn" onclick="openModal('{{ edit_modal_id }}'); event.stopPropagation();" title="Edit" aria-label="Edit">✎</button>
+    <button type="button" class="icon-btn edit-btn" data-edit-modal="{{ edit_modal_id }}" onclick="openModal('{{ edit_modal_id }}'); event.stopPropagation();" title="Edit" aria-label="Edit">✎</button>
     {% endif %}
     {% if delete_url %}
-    <button type="button" class="icon-btn delete-btn" onclick="openConfirmModal('{{ delete_modal_id }}', '{{ delete_title }}', '{{ delete_message }}', '{{ delete_url }}'); event.stopPropagation();" title="Delete" aria-label="Delete">🗑</button>
+    <button type="button" class="icon-btn delete-btn{% if delete_gated %} gated{% endif %}" onclick="openConfirmModal('{{ delete_modal_id }}', '{{ delete_title }}', '{{ delete_message }}', '{{ delete_url }}'); event.stopPropagation();" title="Delete" aria-label="Delete">🗑</button>
     {% endif %}
     {% if attach_url %}
     <button type="button" class="icon-btn" onclick="openModal('{{ attach_modal_id }}'); event.stopPropagation();" title="Attach Evidence" aria-label="Attach Evidence">📎</button>

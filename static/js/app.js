@@ -589,9 +589,14 @@ function populateEditForm(attachmentId) {
         .catch(function() {});
 }
 
+// The statement whose assets the evidence pane is currently showing. Kept in
+// sync by showEvidence() so the drop zone always targets the selected row.
+let currentStatementId = null;
+
 // --- Statement selection -> evidence panel ---
 function showEvidence(statementId) {
     highlightEvidence(statementId);
+    currentStatementId = statementId;
     const container = document.getElementById('evidence-content');
     if (!container || typeof evidenceData === 'undefined') return;
 
@@ -649,6 +654,97 @@ function highlightEvidence(statementId) {
     if (target) {
         target.classList.add('active-statement');
     }
+}
+
+// --- Asset drag-and-drop ---
+// The right-hand evidence pane is a drop target. Dropped files are uploaded to
+// the currently selected statement (see currentStatementId) and the pane is
+// refreshed once the uploads settle, so the new assets appear inline.
+function initAssetDropzone() {
+    const zone = document.getElementById('evidence-pane');
+    if (!zone) return;
+
+    ['dragenter', 'dragover'].forEach(function(evt) {
+        zone.addEventListener(evt, function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            zone.classList.add('drag-over');
+        });
+    });
+
+    ['dragleave', 'drop'].forEach(function(evt) {
+        zone.addEventListener(evt, function(event) {
+            // A leave fires for every child entered; only clear when the pane
+            // itself is left, which is when relatedTarget is outside the zone.
+            if (evt === 'dragleave' && zone.contains(event.relatedTarget)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            zone.classList.remove('drag-over');
+        });
+    });
+
+    zone.addEventListener('drop', function(event) {
+        const dt = event.dataTransfer;
+        if (!dt || !dt.files || dt.files.length === 0) return;
+        if (currentStatementId === null) {
+            flashMessage('Select a statement first, then drop files onto its assets.');
+            return;
+        }
+        uploadDroppedFiles(currentStatementId, dt.files);
+    });
+}
+
+// POSTs each dropped file to /upload_drop/<statement_id> and refreshes the
+// evidence pane when all uploads resolve. A dropped file list has no title, so
+// the server defaults to the filename; the user can rename via the edit modal.
+function uploadDroppedFiles(statementId, fileList) {
+    const files = Array.from(fileList);
+    const promises = files.map(function(file) {
+        const form = new FormData();
+        form.append('file', file);
+        return fetch('/upload_drop/' + statementId, {
+            method: 'POST',
+            body: form,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        }).then(function(r) { return r.json(); })
+          .catch(function() { return { results: [{ filename: file.name, error: 'Upload failed' }] }; });
+    });
+
+    Promise.all(promises).then(function(responses) {
+        let rejected = false;
+        responses.forEach(function(r) {
+            (r.results || []).forEach(function(item) {
+                if (item.error) { rejected = true; return; }
+                if (item.attachment && typeof evidenceData !== 'undefined') {
+                    const sid = String(item.attachment.statement_id);
+                    if (!evidenceData[sid]) evidenceData[sid] = [];
+                    evidenceData[sid].push(item.attachment);
+                }
+            });
+        });
+        if (rejected) {
+            flashMessage('Some files were not added (unsupported type or upload failed).');
+        }
+        // Re-render the selected statement's pane so the dropped assets appear;
+        // evidenceData now holds the fresh rows we just merged in.
+        showEvidence(statementId);
+    });
+}
+
+// Lightweight, self-dismissing status line. Reuses the confirm-modal overlay
+// styling space cheaply; a dedicated element is created on demand.
+function flashMessage(text) {
+    let el = document.getElementById('drop-flash');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'drop-flash';
+        el.className = 'drop-flash';
+        document.body.appendChild(el);
+    }
+    el.textContent = text;
+    el.classList.add('show');
+    clearTimeout(el.__t);
+    el.__t = setTimeout(function() { el.classList.remove('show'); }, 3500);
 }
 
 // --- Drag-to-reorder (SortableJS) ---

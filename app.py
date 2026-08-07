@@ -643,6 +643,110 @@ def create_attachment():
     conn.close()
     return redirect(request.referrer or url_for('all_domains'))
 
+def _infer_type_from_filename(filename):
+    """Best-effort asset type from a dropped file's extension.
+
+    Walks the per-kind allowlists in ALLOWED_EXTENSIONS and returns the first
+    matching type. Anything else (an extension we do not recognise) is treated
+    as a generic document rather than rejected, so a drop never loses a file --
+    only executable/script extensions that would be served as active content are
+    refused (see _is_dangerous_extension).
+    """
+    if '.' not in filename:
+        return 'document'
+    ext = filename.rsplit('.', 1)[1].lower()
+    for att_type, exts in ALLOWED_EXTENSIONS.items():
+        if ext in exts:
+            return att_type
+    return 'document'
+
+
+# Extensions that must never be stored and served same-origin, because a browser
+# could execute them (HTML/SVG as markup, scripts/exes as code). These are the
+# only files a drop is allowed to reject; everything else becomes a document.
+DANGEROUS_EXTENSIONS = (
+    'html', 'htm', 'xhtml', 'svg', 'js', 'mjs', 'php', 'phtml', 'php3',
+    'php4', 'php5', 'asp', 'aspx', 'jsp', 'sh', 'bash', 'py', 'pl', 'cgi',
+    'exe', 'dll', 'bat', 'cmd', 'com', 'msi', 'scr', 'vbs', 'wsf', 'jar',
+    'ps1', 'bin', 'app',
+)
+
+
+def _is_dangerous_extension(filename):
+    """True for extensions a browser or OS could execute if served/stored."""
+    if '.' not in filename:
+        return False
+    ext = filename.rsplit('.', 1)[1].lower()
+    return ext in DANGEROUS_EXTENSIONS
+
+@app.route('/upload_drop/<int:statement_id>', methods=['POST'])
+def upload_drop(statement_id):
+    """Receive files dropped onto a statement's asset section.
+
+    Used by the drag-and-drop affordance in the evidence pane. The target
+    statement is taken from the URL (the currently selected one) rather than a
+    form field, so a dropped file can never be reassigned to another statement.
+    The asset type is inferred from the file extension, and the title defaults
+    to the original filename; both mirror create_attachment's validation.
+    """
+    conn = get_db()
+    statement = conn.execute('SELECT id FROM statements WHERE id = ?', (statement_id,)).fetchone()
+    if not statement:
+        conn.close()
+        return {'error': 'Statement not found'}, 404
+
+    results = []
+    files = request.files.getlist('file')
+    for file in files:
+        if not file or not file.filename:
+            continue
+        if _is_dangerous_extension(file.filename):
+            results.append({'filename': file.filename, 'error': 'File type is not allowed for security reasons'})
+            continue
+        # Unknown extensions fall back to the generic document type rather than
+        # being rejected, so a drop never silently drops a user's file. The real
+        # extension is preserved for those, while recognised types still go
+        # through the strict per-type allowlist.
+        att_type = _infer_type_from_filename(file.filename)
+        ext = _upload_extension(att_type, file.filename)
+        if ext is None:
+            if att_type == 'document':
+                ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+            else:
+                results.append({'filename': file.filename, 'error': 'Unsupported file type'})
+                continue
+        filename = f"{uuid.uuid4().hex}.{ext}"
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        title = os.path.splitext(os.path.basename(file.filename))[0] or 'Untitled'
+        try:
+            cursor = conn.execute(
+                'INSERT INTO attachments (statement_id, title, type, content, filename, position) '
+                'VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM attachments WHERE statement_id = ?))',
+                (statement_id, title, att_type, filename, filename, statement_id)
+            )
+            conn.commit()
+            new_id = cursor.lastrowid
+            results.append({
+                'filename': file.filename,
+                'id': new_id,
+                'attachment': {
+                    'id': new_id,
+                    'statement_id': statement_id,
+                    'title': title,
+                    'type': att_type,
+                    'kind': asset_kind(att_type, filename),
+                    'preview': '',
+                    'filename': filename,
+                },
+            })
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            results.append({'filename': file.filename, 'error': 'Could not save attachment'})
+
+    conn.close()
+    return {'results': results}
+
 @app.route('/update_statement', methods=['POST'])
 def update_statement():
     statement_id = request.form.get('statement_id')

@@ -460,6 +460,39 @@ p {
     overflow-y: auto;
 }
 
+/* Highlight the evidence pane while files are dragged over it, signalling it
+   is a valid drop target for the currently selected statement's assets. */
+.right-pane.drag-over {
+    outline: 2px dashed var(--accent-teal);
+    outline-offset: -6px;
+    background: color-mix(in srgb, var(--accent-teal) 8%, transparent);
+}
+
+/* Self-dismissing status line for drop feedback (e.g. "select a statement
+   first"). Sits above the panes and fades out on its own. */
+.drop-flash {
+    position: fixed;
+    left: 50%;
+    bottom: 1.5rem;
+    transform: translate(-50%, 1rem);
+    background: var(--bg-elevated, #1f2933);
+    color: var(--text, #e6edf3);
+    border: 1px solid var(--border, #2c3a47);
+    padding: 0.6rem 1rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    font-size: 0.875rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    z-index: 200;
+    max-width: 90vw;
+}
+.drop-flash.show {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
 /* Scroll container shared by the statement list and its trailing add row, so
    the add row can be sticky relative to the list rather than the viewport. */
 .pane-body {

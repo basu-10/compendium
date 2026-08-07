@@ -44,9 +44,10 @@
                          tabindex="0"
                          role="button"
                          aria-expanded="false">
+                        <span class="drag-handle" aria-hidden="true" title="Drag to reorder">&#8942;&#8942;</span>
                         <div class="statement-content">
                             <div class="statement-text">
-                                <strong>Statement {{ loop.index }}:</strong> {{ statement.text }}
+                                {{ statement.text }}
                             </div>
                         </div>
                         {% set edit_modal_id = stmt_edit_modal_id %}
@@ -80,7 +81,7 @@
 
         <div class="right-pane" id="evidence-pane">
             <div class="pane-header">
-                <h3>Supporting Evidence</h3>
+                <h3 id="evidence-pane-title">Assets for {{ statements[0].text if statements else 'this topic' }}</h3>
             </div>
             <div class="evidence-grid" id="evidence-content">
                 {% if statements %}
@@ -163,6 +164,7 @@
 
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/split.js@1.6.5/dist/split.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <script id="evidence-data" type="application/json">{{ evidence_data | tojson }}</script>
 <script>
 // Evidence for every statement, keyed by statement id. Parsed from a JSON
@@ -196,6 +198,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initEvidenceCards();
     initStatements();
     initMobileAccordion();
+    initDragReorder();
 });
 </script>
 {% endblock %}

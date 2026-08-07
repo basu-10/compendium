@@ -147,6 +147,37 @@ def get_db():
     conn.execute('PRAGMA foreign_keys = ON')
     return conn
 
+def _ensure_column(conn, cursor, table, column, definition):
+    """Add `column` to `table` only if SQLite doesn't already have it.
+
+    SQLite's ALTER TABLE ADD COLUMN is a no-op-prone operation: it cannot be
+    guarded with IF NOT EXISTS, so we inspect the schema and skip when present.
+    """
+    cursor.execute("PRAGMA table_info(%s)" % table)
+    if any(row['name'] == column for row in cursor.fetchall()):
+        return
+    cursor.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, column, definition))
+
+
+def _backfill_positions(conn, cursor, table, parent_column):
+    """Assign sequential positions to rows that still have the default 0.
+
+    Newly added `position` columns default every existing row to 0, which would
+    leave ties. Only rows that are still 0 are renumbered by primary-key order
+    inside each parent group, so we never disturb an order the user set.
+    """
+    cursor.execute(
+        "SELECT %s, GROUP_CONCAT(id) FROM %s WHERE position = 0 GROUP BY %s"
+        % (parent_column, table, parent_column)
+    )
+    for parent_value, id_csv in cursor.fetchall():
+        ids = [i for i in id_csv.split(',') if i]
+        cursor.executemany(
+            "UPDATE %s SET position = ? WHERE id = ?" % table,
+            [(idx, rid) for idx, rid in enumerate(ids)],
+        )
+
+
 def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = get_db()
@@ -192,6 +223,14 @@ def init_db():
     existing = cursor.fetchone()
     if existing and 'richtext' not in existing[0]:
         _migrate_attachments_table(conn, cursor)
+
+    # `position` drives manual ordering of statements within a topic and of
+    # assets within a statement. Both are added lazily so existing databases get
+    # a sensible default (0) and are renumbered by creation order on first use.
+    _ensure_column(conn, cursor, 'statements', 'position', 'INTEGER DEFAULT 0')
+    _ensure_column(conn, cursor, 'attachments', 'position', 'INTEGER DEFAULT 0')
+    _backfill_positions(conn, cursor, 'statements', 'topic_id')
+    _backfill_positions(conn, cursor, 'attachments', 'statement_id')
     
     cursor.execute('SELECT COUNT(*) FROM domains')
     if cursor.fetchone()[0] == 0:
@@ -412,11 +451,11 @@ def topic(topic_id):
         JOIN domains d ON t.domain_id = d.id 
         WHERE t.id = ?
     ''', (topic_id,)).fetchone()
-    statements = conn.execute('SELECT * FROM statements WHERE topic_id = ? ORDER BY created_at ASC', (topic_id,)).fetchall()
+    statements = conn.execute('SELECT * FROM statements WHERE topic_id = ? ORDER BY position ASC, created_at ASC', (topic_id,)).fetchall()
     statement_ids = [s['id'] for s in statements]
     if statement_ids:
         placeholders = ','.join('?' * len(statement_ids))
-        attachments = conn.execute(f'SELECT * FROM attachments WHERE statement_id IN ({placeholders}) ORDER BY created_at DESC', statement_ids).fetchall()
+        attachments = conn.execute(f'SELECT * FROM attachments WHERE statement_id IN ({placeholders}) ORDER BY position ASC, created_at DESC', statement_ids).fetchall()
     else:
         attachments = []
     attachments_by_statement = {}
@@ -482,7 +521,7 @@ def create_statement():
         flash('Statement text is required')
         return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
-    conn.execute('INSERT INTO statements (topic_id, text) VALUES (?, ?)', (topic_id, text))
+    conn.execute('INSERT INTO statements (topic_id, text, position) VALUES (?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM statements WHERE topic_id = ?))', (topic_id, text, topic_id))
     conn.commit()
     conn.close()
     return redirect(url_for('topic', topic_id=topic_id))
@@ -520,8 +559,11 @@ def create_attachment():
     
     conn = get_db()
     try:
-        conn.execute('INSERT INTO attachments (statement_id, title, type, content, filename) VALUES (?, ?, ?, ?, ?)',
-                     (statement_id, title, att_type, content, filename))
+        conn.execute(
+            'INSERT INTO attachments (statement_id, title, type, content, filename, position) '
+            'VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM attachments WHERE statement_id = ?))',
+            (statement_id, title, att_type, content, filename, statement_id)
+        )
         conn.commit()
     except sqlite3.IntegrityError:
         conn.rollback()
@@ -541,6 +583,49 @@ def update_statement():
     conn = get_db()
     conn.execute('UPDATE statements SET text = ? WHERE id = ?', (text, statement_id))
     conn.commit()
+    conn.close()
+    return redirect(request.referrer or url_for('all_domains'))
+
+@app.route('/reorder_statements/<int:topic_id>', methods=['POST'])
+def reorder_statements(topic_id):
+    # Receives the full ordered list of statement ids for the topic; each is
+    # assigned a sequential position so the new order is authoritative.
+    ordered = request.form.getlist('order')
+    if not ordered:
+        return redirect(request.referrer or url_for('all_domains'))
+    conn = get_db()
+    try:
+        conn.executemany(
+            'UPDATE statements SET position = ? WHERE id = ? AND topic_id = ?',
+            [(idx, int(sid), topic_id) for idx, sid in enumerate(ordered)],
+        )
+        conn.commit()
+    except (sqlite3.IntegrityError, ValueError):
+        conn.rollback()
+        conn.close()
+        flash('Could not reorder statements')
+        return redirect(request.referrer or url_for('all_domains'))
+    conn.close()
+    return redirect(request.referrer or url_for('all_domains'))
+
+@app.route('/reorder_attachments/<int:statement_id>', methods=['POST'])
+def reorder_attachments(statement_id):
+    # Like reorder_statements but scoped to one statement's assets.
+    ordered = request.form.getlist('order')
+    if not ordered:
+        return redirect(request.referrer or url_for('all_domains'))
+    conn = get_db()
+    try:
+        conn.executemany(
+            'UPDATE attachments SET position = ? WHERE id = ? AND statement_id = ?',
+            [(idx, int(aid), statement_id) for idx, aid in enumerate(ordered)],
+        )
+        conn.commit()
+    except (sqlite3.IntegrityError, ValueError):
+        conn.rollback()
+        conn.close()
+        flash('Could not reorder assets')
+        return redirect(request.referrer or url_for('all_domains'))
     conn.close()
     return redirect(request.referrer or url_for('all_domains'))
 

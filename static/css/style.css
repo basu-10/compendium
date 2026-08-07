@@ -449,7 +449,49 @@ p {
     outline-offset: 2px;
 }
 
-.statement.active-statement {
+.statement-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+/* Drag handle: always visible but muted, so reordering is discoverable. The
+   handle (not the row) is the SortableJS drag trigger, so clicks/selects on the
+   row body still work as expand/edit. */
+.drag-handle {
+    flex-shrink: 0;
+    cursor: grab;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    line-height: 1.4;
+    letter-spacing: -0.1em;
+    padding: 0.1rem 0.15rem;
+    margin-top: 0.1rem;
+    border-radius: 4px;
+    user-select: none;
+    transition: color 0.2s, background-color 0.2s;
+}
+
+.drag-handle:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-muted);
+}
+
+.drag-handle:active {
+    cursor: grabbing;
+}
+
+.statement.sortable-ghost,
+.evidence-card.sortable-ghost {
+    opacity: 0.4;
+}
+
+.statement.sortable-chosen .drag-handle,
+.evidence-card.sortable-chosen .drag-handle {
+    color: var(--text-primary);
+}
+
+.active-statement {
     border-left-color: var(--text-primary);
     background-color: #f9fafb;
     border-color: #d1d5db;
@@ -637,11 +679,11 @@ p {
     text-align: center;
 }
 
-/* Card header holds the type badge and the hover action buttons */
+/* Card header holds the drag handle, type badge, and the hover action buttons */
 .evidence-card-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 0.5rem;
     margin-bottom: 0.5rem;
     min-height: 32px;
@@ -649,6 +691,11 @@ p {
 
 .evidence-card-header .evidence-type {
     margin-bottom: 0;
+}
+
+/* Push the hover actions to the right edge of the header. */
+.evidence-card-header .hover-actions {
+    margin-left: auto;
 }
 
 .evidence-type {

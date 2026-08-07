@@ -437,6 +437,13 @@ function renderEvidenceCard(att) {
     const header = document.createElement('div');
     header.className = 'evidence-card-header';
 
+    const handle = document.createElement('span');
+    handle.className = 'drag-handle';
+    handle.setAttribute('aria-hidden', 'true');
+    handle.title = 'Drag to reorder';
+    handle.innerHTML = '&#8942;&#8942;';
+    header.appendChild(handle);
+
     const badge = document.createElement('span');
     badge.className = 'evidence-type';
 
@@ -599,6 +606,15 @@ function showEvidence(statementId) {
     // statement is selected, so it doubles as the empty state for a statement
     // that has no evidence yet.
     container.appendChild(buildAddEvidenceCard(statementId, items.length === 0));
+
+    // Reflect the selected statement in the pane title and keep its assets
+    // reorderable after the cards are rebuilt client-side.
+    const titleEl = document.getElementById('evidence-pane-title');
+    if (titleEl) {
+        const stmt = document.querySelector('.statement[data-statement-id="' + statementId + '"]');
+        titleEl.textContent = 'Assets for ' + (stmt ? stmt.textContent.trim() : 'this topic');
+    }
+    initAssetSortable(statementId);
 }
 
 function buildAddEvidenceCard(statementId, isEmpty) {
@@ -634,3 +650,72 @@ function highlightEvidence(statementId) {
         target.classList.add('active-statement');
     }
 }
+
+// --- Drag-to-reorder (SortableJS) ---
+// A single Sortable instance is reused for the statement list; the assets grid
+// gets a fresh instance on each selection so its closure always knows the
+// currently selected statement.
+let statementSortable = null;
+
+function initDragReorder() {
+    const list = document.getElementById('statement-list');
+    if (!list || typeof Sortable === 'undefined') return;
+    statementSortable = new Sortable(list, {
+        handle: '.drag-handle',
+        draggable: '.statement',
+        animation: 150,
+        onEnd: function() {
+            persistOrder('reorder_statements', {TopicId: undefined}, list, '.statement', 'data-statement-id');
+        }
+    });
+}
+
+function initAssetSortable(statementId) {
+    const grid = document.getElementById('evidence-content');
+    if (!grid || typeof Sortable === 'undefined') return;
+    // Only one statement's assets are visible at a time, so replace any existing
+    // instance on the grid element rather than stacking them; otherwise a stale
+    // closure would persist an old statement id.
+    if (grid.__sortable && grid.__sortable.destroy) grid.__sortable.destroy();
+    const inst = new Sortable(grid, {
+        handle: '.drag-handle',
+        draggable: '.evidence-card',
+        animation: 150,
+        // The trailing add-card tile is not draggable.
+        filter: '.add-card',
+        onEnd: function() {
+            persistOrder('reorder_attachments', {StatementId: statementId}, grid, '.evidence-card', 'data-id');
+        }
+    });
+    // Track by element for cleanup on the next selection, not by statement id
+    // (a statement can be re-selected after others, so a per-id guard would
+    // leave a stale instance live on the shared grid).
+    grid.__sortable = inst;
+}
+
+// Reads the current DOM order and POSTs it, so the server becomes the source of
+// truth on next load. Kind-specific params (topic_id / statement_id) are appended
+// to the form data so the route can scope the update.
+function persistOrder(routeName, extra, container, itemSelector, idAttr) {
+    const ids = [...container.querySelectorAll(itemSelector)].map(function(el) {
+        return el.getAttribute(idAttr);
+    });
+    const form = new FormData();
+    ids.forEach(function(id) { form.append('order', id); });
+    Object.keys(extra).forEach(function(k) { if (extra[k] !== undefined) form.append(k, extra[k]); });
+
+    let target;
+    if (routeName === 'reorder_statements') {
+        const topicId = window.location.pathname.split('/').filter(Boolean).pop();
+        target = '/reorder_statements/' + topicId;
+    } else {
+        target = '/reorder_attachments/' + (extra.StatementId || '');
+    }
+
+    fetch(target, {
+        method: 'POST',
+        body: form,
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    }).catch(function() { /* order is best-effort; next reload re-syncs */ });
+}
+

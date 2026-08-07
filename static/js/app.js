@@ -254,6 +254,22 @@ const TYPE_TO_KIND = {
 };
 const TABLE_EXTENSIONS = ['csv', 'tsv', 'xls', 'xlsx', 'ods'];
 
+// Inline SVG markup for each asset kind. Mirrors the per-kind <svg> files in
+// templates/components/icons/ so the JS-rendered cards (statement click, edit
+// form) draw the same icon as the server-rendered ones. Keep in sync.
+const ASSET_ICONS = {
+    link: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
+    richtext: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 6h16"/><path d="M4 11h12"/><path d="M4 16h16"/><path d="M4 21h8"/></svg>',
+    image: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-4.5-4.5L7 20"/></svg>',
+    video: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="2" y="5" width="14" height="14" rx="2"/><path d="m22 8-6 4 6 4V8Z"/></svg>',
+    table: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 9v12"/><path d="M15 9v12"/></svg>',
+    file: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path d="M14 3v5h5"/></svg>'
+};
+
+function assetIconSvg(kind) {
+    return ASSET_ICONS[kind] || ASSET_ICONS.file;
+}
+
 function assetKind(type, filename) {
     let kind = TYPE_TO_KIND[type] || 'file';
     if (kind === 'file' && filename && filename.indexOf('.') !== -1) {
@@ -276,13 +292,24 @@ function renderEvidenceCard(att) {
     card.dataset.type = att.type;
     card.dataset.filename = filename;
 
-    // Header: type badge + hover actions
+    // Header: type badge (icon + label) + hover actions
     const header = document.createElement('div');
     header.className = 'evidence-card-header';
 
     const badge = document.createElement('span');
     badge.className = 'evidence-type';
-    badge.textContent = kind;
+
+    const icon = document.createElement('span');
+    icon.className = 'evidence-type-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.innerHTML = assetIconSvg(kind);
+
+    const label = document.createElement('span');
+    label.className = 'evidence-type-label';
+    label.textContent = kind;
+
+    badge.appendChild(icon);
+    badge.appendChild(label);
     header.appendChild(badge);
 
     const actions = document.createElement('div');

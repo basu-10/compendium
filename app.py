@@ -66,6 +66,30 @@ def asset_kind(att_type, filename=None):
     return kind
 
 
+# Order the kind icons are displayed in on a statement's evidence summary, so
+# the badge strip looks the same for every statement regardless of the order
+# the attachments happen to have been added in.
+KIND_DISPLAY_ORDER = ('link', 'richtext', 'image', 'video', 'table', 'file')
+
+
+def evidence_summary(attachments):
+    """Condense a statement's attachments into a total plus a per-kind tally.
+
+    The left-hand statement list only shows how much evidence is attached and
+    which kinds it is, not the evidence itself -- the cards in the right-hand
+    pane do that. Returns e.g.
+    {'total': 3, 'kinds': [('link', 2), ('image', 1)]}.
+    """
+    counts = {}
+    for att in attachments or ():
+        kind = asset_kind(att['type'], att['filename'])
+        counts[kind] = counts.get(kind, 0) + 1
+    return {
+        'total': sum(counts.values()),
+        'kinds': [(k, counts[k]) for k in KIND_DISPLAY_ORDER if k in counts],
+    }
+
+
 PREVIEW_LENGTH = 140
 
 
@@ -429,6 +453,7 @@ def topic(topic_id):
         statements=statements,
         attachments_by_statement=attachments_by_statement,
         evidence_data=evidence_data,
+        evidence_summary=evidence_summary,
         asset_kind=asset_kind,
         preview_text=preview_text,
         CONTENT_ONLY_TYPES=CONTENT_ONLY_TYPES,

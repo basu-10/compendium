@@ -1,0 +1,41 @@
+{# Asset-kind icons.
+
+   The SVG sources live one per file in templates/components/icons/<kind>.svg so
+   they can be edited (or swapped for a different icon set) without touching any
+   template that draws them. They are stroke-based and inherit `currentColor`,
+   matching the other inline SVGs in the app.
+
+   `asset_icon(kind)` maps a render kind produced by asset_kind() in app.py
+   (link | richtext | image | video | table | file) to its icon and falls back
+   to the generic file icon for anything unrecognised.
+
+   Usage:
+     {% from "components/icons.html" import asset_icon, asset_icon_label %}
+     {{ asset_icon('image') }}
+#}
+
+{% set ASSET_ICON_FILES = {
+    'link': 'link.svg',
+    'richtext': 'richtext.svg',
+    'image': 'image.svg',
+    'video': 'video.svg',
+    'table': 'table.svg',
+    'file': 'file.svg',
+} %}
+
+{% set ASSET_ICON_LABELS = {
+    'link': 'Link',
+    'richtext': 'Rich text',
+    'image': 'Image',
+    'video': 'Video',
+    'table': 'Spreadsheet / table',
+    'file': 'File',
+} %}
+
+{% macro asset_icon(kind) -%}
+{% include 'components/icons/' ~ ASSET_ICON_FILES.get(kind, 'file.svg') %}
+{%- endmacro %}
+
+{% macro asset_icon_label(kind) -%}
+{{ ASSET_ICON_LABELS.get(kind, 'File') }}
+{%- endmacro %}

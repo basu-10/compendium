@@ -54,29 +54,8 @@
                     {% set attach_url = url_for('create_attachment') %}
                     {% include "components/hover_actions.html" with context %}
 
-                    {% if statement.id in attachments_by_statement %}
-                    <div class="attachments-list">
-                        {% for att in attachments_by_statement[statement.id] %}
-                        <div class="attachment-item">
-                            <div class="att-title">{{ att.title }}</div>
-                            <div class="att-meta">
-                                <span class="evidence-type">{{ att.type }}</span>
-                                {% if att.type == 'link' %}
-                                    &bull; <a href="{{ att.content }}" target="_blank">Open Link</a>
-                                {% elif att.type == 'image' %}
-                                    &bull; <a href="{{ url_for('uploaded_file', filename=att.content) }}" target="_blank">View Image</a>
-                                {% elif att.type == 'document' %}
-                                    &bull; <a href="{{ url_for('uploaded_file', filename=att.content) }}" target="_blank">Download</a>
-                                {% elif att.type == 'video' %}
-                                    &bull; <a href="{{ att.content }}" target="_blank">Watch Video</a>
-                                {% elif att.type == 'text' %}
-                                    &bull; <span>Text Attachment</span>
-                                {% endif %}
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                    {% endif %}
+                    {% set summary = evidence_summary(attachments_by_statement.get(statement.id)) %}
+                    {% include "components/evidence_summary.html" with context %}
                 </div>
                 {% endfor %}
             {% else %}

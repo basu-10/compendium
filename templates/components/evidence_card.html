@@ -10,7 +10,11 @@
      data-preview="{{ preview_text(att.content) }}"
      data-filename="{{ att.filename or '' }}">
     <div class="evidence-card-header">
-        <span class="evidence-type">{{ kind }}</span>
+        <span class="evidence-type">
+            {% from "components/icons.html" import asset_icon %}
+            <span class="evidence-type-icon" aria-hidden="true">{{ asset_icon(kind) }}</span>
+            <span class="evidence-type-label">{{ kind }}</span>
+        </span>
         {% set edit_modal_id = 'edit-attachment-' ~ att.id %}
         {% set edit_url = url_for('update_attachment') %}
         {% set delete_modal_id = 'delete-attachment' %}

@@ -485,12 +485,26 @@ p {
 }
 
 .evidence-type {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
     font-size: 0.75rem;
     color: var(--text-muted);
     text-transform: uppercase;
     font-weight: 600;
     letter-spacing: 0.05em;
     margin-bottom: 0.5rem;
+}
+
+.evidence-type-icon {
+    display: inline-flex;
+    line-height: 1;
+}
+
+.evidence-type-icon svg {
+    width: 14px;
+    height: 14px;
+    display: block;
 }
 
 .evidence-card h4 {
@@ -794,39 +808,69 @@ p {
     color: var(--text-muted);
 }
 
-/* Attachments */
-.attachments-list {
-    margin-top: 1rem;
-}
-
-.attachment-item {
-    background-color: var(--bg-muted);
-    border-left: 3px solid var(--text-muted);
-    padding: 0.75rem;
-    margin-bottom: 0.5rem;
-    border-radius: 0 6px 6px 0;
-}
-
-.attachment-item .att-title {
-    color: var(--text-primary);
-    font-weight: 500;
-    font-size: 0.9rem;
-}
-
-.attachment-item .att-meta {
-    font-size: 0.8rem;
+/* Evidence summary strip on a statement.
+   Shows the attachment count plus one icon per attached asset kind; the assets
+   themselves are rendered as cards in the right-hand evidence pane. */
+.evidence-summary {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+    margin-top: 0.75rem;
+    padding-top: 0.625rem;
+    border-top: 1px solid var(--border);
     color: var(--text-secondary);
-    margin-top: 0.25rem;
 }
 
-.attachment-item a {
+.evidence-count {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.evidence-kinds {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+}
+
+.evidence-kind {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.1875rem 0.375rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background-color: var(--bg-muted);
+    color: var(--text-secondary);
+    line-height: 1;
+}
+
+.evidence-kind svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+    flex-shrink: 0;
+}
+
+.evidence-kind-count {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+}
+
+.statement:hover .evidence-kind,
+.statement.active-statement .evidence-kind {
+    border-color: #d1d5db;
     color: var(--text-primary);
-    text-decoration: none;
-    font-weight: 500;
 }
 
-.attachment-item a:hover {
-    text-decoration: underline;
+.statement.active-statement .evidence-count {
+    color: var(--text-primary);
 }
 
 .media-preview {

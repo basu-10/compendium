@@ -1,0 +1,24 @@
+{# Compact evidence summary for a statement in the left-hand claims pane.
+
+   Deliberately shows only *how much* evidence is attached and *what kinds* it
+   is -- the actual assets are rendered as cards in the right-hand evidence
+   pane, so listing them here too would just duplicate that.
+
+   Expects: summary (from evidence_summary() in app.py). #}
+{% from "components/icons.html" import asset_icon, asset_icon_label %}
+{% if summary.total %}
+<div class="evidence-summary" aria-label="{{ summary.total }} evidence {{ 'asset' if summary.total == 1 else 'assets' }} attached">
+    <span class="evidence-count">
+        {{ summary.total }} {{ 'asset' if summary.total == 1 else 'assets' }}
+    </span>
+    <span class="evidence-kinds">
+        {% for kind, count in summary.kinds %}
+        <span class="evidence-kind" data-kind="{{ kind }}"
+              title="{{ count }} &times; {{ asset_icon_label(kind) }}">
+            {{ asset_icon(kind) }}
+            {% if count > 1 %}<span class="evidence-kind-count">{{ count }}</span>{% endif %}
+        </span>
+        {% endfor %}
+    </span>
+</div>
+{% endif %}

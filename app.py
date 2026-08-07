@@ -237,13 +237,12 @@ def init_db():
     cursor.execute('SELECT COUNT(*) FROM domains')
     if cursor.fetchone()[0] == 0:
         cursor.executemany('INSERT INTO domains (name, description) VALUES (?, ?)', [
-            ('Computer Science', 'Architecture, backend dev, AI implementations, and databases.'),
-            ('Markets & Economics', 'Macro analysis, company 10-K reports, and asset classes.'),
-            ('Literature, Media', 'Classic texts, parallel readings, literary criticism, and media.'),
-            ('Society, Culture', 'Sociopolitical deep dives, culture, and social structures.'),
-            ('Life Sciences', 'Physics, chemistry, biology, and the natural sciences.'),
-            ('Math/Statistics/Logic', 'Mathematics, statistics, and formal logic.'),
-            ('History', 'Historical eras, events, and their interpretation.')
+            ('Tech, Engineering & Systems', 'Codebases, software patterns, system architecture, AI implementations.'),
+            ('Quantitative & Data Science', 'Mathematical proofs, statistical models, datasets, algorithmic logic.'),
+            ('Market, Business & Corporate', 'Equity research, 10-K teardowns, macro dynamics, industry analyses.'),
+            ('Empirical & Natural Science', 'Physical/biological scientific studies, experimental evidence, papers.'),
+            ('Policy, Law & Governance', 'Regulatory frameworks, sociopolitical structures, legal documents.'),
+            ('Culture, History & Arts', 'Historical events, literary criticism, media analysis, philosophical texts.')
         ])
 
     # Index foreign-key child columns so cascade deletes and the per-delete
@@ -325,72 +324,68 @@ def _migrate_attachments_table(conn, cursor):
 
 
 def _migrate_domains(conn, cursor):
-    """Split the legacy 'Literature & Society' domain and add new domains.
+    """Consolidate the domain set into the six canonical domains.
 
     Run on every startup so existing databases converge to the current domain
     set without re-seeding. Idempotent: each change is guarded so repeat runs
-    are safe, and it is a no-op when the schema already matches.
+    are safe, and it is a no-op when the schema already matches. Any topics in
+    legacy domains are merged into the matching canonical domain before the
+    legacy row is dropped, so no user data is ever destroyed.
     """
-    # Split 'Literature & Society' into 'Literature' and 'Society'. The legacy
-    # domain's existing topics stay attached to 'Literature'; 'Society' starts
-    # empty so the split is reversible and never destroys user data.
-    cursor.execute("SELECT id FROM domains WHERE name = 'Literature & Society'")
-    legacy = cursor.fetchone()
-    if legacy:
-        legacy_id = legacy[0]
-        cursor.execute(
-            "INSERT OR IGNORE INTO domains (name, description) VALUES (?, ?)",
-            ('Literature', 'Classic texts, parallel readings, and literary criticism.'),
-        )
-        cursor.execute(
-            "INSERT OR IGNORE INTO domains (name, description) VALUES (?, ?)",
-            ('Society', 'Sociopolitical deep dives, culture, and social structures.'),
-        )
-        cursor.execute("SELECT id FROM domains WHERE name = 'Literature'")
-        literature_id = cursor.fetchone()[0]
-        cursor.execute(
-            "UPDATE topics SET domain_id = ? WHERE domain_id = ?",
-            (literature_id, legacy_id),
-        )
-        cursor.execute("DELETE FROM domains WHERE id = ?", (legacy_id,))
+    # The six canonical domains and the legacy domains that fold into each.
+    targets = {
+        'Tech, Engineering & Systems': (
+            'Codebases, software patterns, system architecture, AI implementations.',
+            ['Computer Science', 'Literature & Society'],
+        ),
+        'Quantitative & Data Science': (
+            'Mathematical proofs, statistical models, datasets, algorithmic logic.',
+            ['Math/Statistics/Logic', 'Math/Logic/Stat', 'Literature',
+             'Math/Statistics/Logic'],
+        ),
+        'Market, Business & Corporate': (
+            'Equity research, 10-K teardowns, macro dynamics, industry analyses.',
+            ['Markets & Economics', 'Markets'],
+        ),
+        'Empirical & Natural Science': (
+            'Physical/biological scientific studies, experimental evidence, papers.',
+            ['Life Sciences', 'Natural Science'],
+        ),
+        'Policy, Law & Governance': (
+            'Regulatory frameworks, sociopolitical structures, legal documents.',
+            ['Society, Culture', 'Society'],
+        ),
+        'Culture, History & Arts': (
+            'Historical events, literary criticism, media analysis, philosophical texts.',
+            ['Literature, Media', 'History', 'Arts'],
+        ),
+    }
 
-    # Rename domains introduced in an earlier seed so existing databases match
-    # the current naming. If the target name already exists we merge the source
-    # domain's topics into it before dropping the source, so no data is lost.
-    for old_name, new_name in [
-        ('Literature', 'Literature, Media'),
-        ('Society', 'Society, Culture'),
-    ]:
-        cursor.execute("SELECT id FROM domains WHERE name = ?", (old_name,))
-        source = cursor.fetchone()
-        if not source:
-            continue
-        source_id = source[0]
-        cursor.execute("SELECT id FROM domains WHERE name = ?", (new_name,))
-        target = cursor.fetchone()
-        if target:
-            target_id = target[0]
+    # Ensure each canonical domain exists with its current description.
+    for name, (description, _legacy) in targets.items():
+        cursor.execute(
+            "INSERT OR IGNORE INTO domains (name, description) VALUES (?, ?)",
+            (name, description),
+        )
+
+    # Map every legacy source domain to its canonical target, then merge topics
+    # and drop the legacy row.
+    for target_name, (_description, sources) in targets.items():
+        cursor.execute("SELECT id FROM domains WHERE name = ?", (target_name,))
+        target_id = cursor.fetchone()[0]
+        for source in sources:
+            cursor.execute("SELECT id FROM domains WHERE name = ?", (source,))
+            row = cursor.fetchone()
+            if not row:
+                continue
+            source_id = row[0]
+            if source_id == target_id:
+                continue
             cursor.execute(
                 "UPDATE topics SET domain_id = ? WHERE domain_id = ?",
                 (target_id, source_id),
             )
             cursor.execute("DELETE FROM domains WHERE id = ?", (source_id,))
-        else:
-            cursor.execute(
-                "UPDATE domains SET name = ? WHERE id = ?",
-                (new_name, source_id),
-            )
-
-    # Add the domains introduced after the original seed.
-    for name, description in [
-        ('Life Sciences', 'Physics, chemistry, biology, and the natural sciences.'),
-        ('Math/Statistics/Logic', 'Mathematics, statistics, and formal logic.'),
-        ('History', 'Historical eras, events, and their interpretation.'),
-    ]:
-        cursor.execute(
-            "INSERT OR IGNORE INTO domains (name, description) VALUES (?, ?)",
-            (name, description),
-        )
 
 
 @app.route('/')

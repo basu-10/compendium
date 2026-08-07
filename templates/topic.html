@@ -111,6 +111,7 @@
     </div>
 
     {% set add_stmt_modal_id = 'add-statement-' ~ topic.id %}
+    {% set modal_id = add_stmt_modal_id %}
     {% include "modals/add_statement.html" with context %}
 
     {% for statement in statements %}
@@ -150,6 +151,7 @@
     {% include "modals/confirm_delete.html" with context %}
 
     {% set modal_id = topic_edit_modal_id %}
+    {% set topic_id = topic.id %}
     {% set current_name = topic.name %}
     {% set current_description = topic.description or '' %}
     {% include "modals/edit_topic.html" with context %}

@@ -27,6 +27,7 @@
             </div>
 
             {% set modal_id = domain_edit_modal_id %}
+            {% set domain_id = domain.id %}
             {% set current_name = domain.name %}
             {% set current_description = domain.description or '' %}
             {% include "modals/edit_domain.html" with context %}

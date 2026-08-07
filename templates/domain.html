@@ -20,12 +20,12 @@
     </div>
     <p style="margin-bottom: 2rem;">{{ domain.description }}</p>
 
-    <button class="filter-btn" onclick="openModal('add-topic-{{ domain.id }}')">+ New Topic</button>
-
     {% set add_topic_modal_id = 'add-topic-' ~ domain.id %}
+    {% set modal_id = add_topic_modal_id %}
     {% include "modals/add_topic.html" with context %}
 
     {% set modal_id = domain_edit_modal_id %}
+    {% set domain_id = domain.id %}
     {% set current_name = domain.name %}
     {% set current_description = domain.description or '' %}
     {% include "modals/edit_domain.html" with context %}
@@ -33,7 +33,6 @@
     {% set modal_id = domain_delete_modal_id %}
     {% include "modals/confirm_delete.html" with context %}
 
-    {% if topics %}
     <div class="grid">
         {% for topic in topics %}
         {% set topic_edit_modal_id = 'edit-topic-' ~ topic.id %}
@@ -57,6 +56,7 @@
             </div>
 
             {% set modal_id = topic_edit_modal_id %}
+            {% set topic_id = topic.id %}
             {% set current_name = topic.name %}
             {% set current_description = topic.description or '' %}
             {% include "modals/edit_topic.html" with context %}
@@ -65,11 +65,17 @@
             {% include "modals/confirm_delete.html" with context %}
         </div>
         {% endfor %}
+
+        <button type="button" class="card card-new" onclick="openModal('{{ add_topic_modal_id }}')"
+                aria-haspopup="dialog" aria-label="Create a new topic in this domain">
+            <span class="card-new-icon" aria-hidden="true">+</span>
+            <span class="card-new-body">
+                <span class="card-new-title">New Topic</span>
+                <span class="card-new-hint">
+                    {% if topics %}Add another topic to {{ domain.name }}{% else %}Create your first topic in {{ domain.name }}{% endif %}
+                </span>
+            </span>
+        </button>
     </div>
-    {% else %}
-    <div class="empty-state">
-        <p>No topics yet. Click "+ New Topic" to create your first topic in this domain.</p>
-    </div>
-    {% endif %}
 </div>
 {% endblock %}

@@ -344,6 +344,72 @@ p {
     transform: translateY(-1px);
 }
 
+/* "New Topic" card.
+   Shares the card footprint so it sits in the grid flow, but is deliberately
+   styled as an affordance rather than content: dashed outline, no filled
+   surface, and centred label. */
+.card-new {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    background-color: transparent;
+    border: 1px dashed #d1d5db;
+    color: var(--text-secondary);
+    box-shadow: none;
+}
+
+.card-new:hover {
+    border-style: solid;
+    border-color: var(--accent);
+    background-color: var(--bg-surface);
+    color: var(--text-primary);
+}
+
+.card-new:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.card-new-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 8px;
+    background-color: var(--bg-muted);
+    color: var(--text-primary);
+    font-size: 1.25rem;
+    line-height: 1;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.card-new:hover .card-new-icon {
+    background-color: var(--accent);
+    color: var(--bg-surface);
+}
+
+.card-new-body {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.card-new-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.card-new-hint {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
 .tag {
     display: inline-flex;
     align-items: center;

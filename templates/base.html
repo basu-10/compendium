@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     {% block head %}{% endblock %}
 </head>
-<body>
+<body class="theme-legacy">
     <div class="app-layout">
         <aside class="sidebar">
             <div class="sidebar-header">
@@ -57,7 +57,7 @@
                         <input type="text" placeholder="Search evidence...">
                     </div>
                     <button class="icon-btn" title="Notifications">&#128276;</button>
-                    <button class="icon-btn" title="Settings">&#9881;</button>
+                    <button class="icon-btn" id="settings-btn" title="Settings" aria-label="Settings">&#9881;</button>
                     <button class="btn-export">Export</button>
                 </div>
             </header>
@@ -86,5 +86,84 @@
 
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     {% block scripts %}{% endblock %}
+
+    <!-- Settings: layout/theme selection. "legacy" is the current layout;
+         "modern" is scaffolded but not yet implemented. -->
+    <div class="modal-overlay" id="settings-modal">
+        <div class="modal settings-modal">
+            <div class="modal-header">
+                <h3>Settings</h3>
+                <button type="button" class="icon-btn modal-close" data-close-modal="settings-modal" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <fieldset class="settings-group">
+                    <legend>Layout</legend>
+                    <div class="theme-option">
+                        <input type="radio" name="theme" id="theme-legacy" value="legacy" checked>
+                        <label for="theme-legacy">
+                            <span class="theme-option-name">Legacy</span>
+                            <span class="theme-option-desc">The current layout.</span>
+                        </label>
+                    </div>
+                    <div class="theme-option">
+                        <input type="radio" name="theme" id="theme-modern" value="modern">
+                        <label for="theme-modern">
+                            <span class="theme-option-name">Modern</span>
+                            <span class="theme-option-desc">Coming soon.</span>
+                        </label>
+                    </div>
+                </fieldset>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" data-close-modal="settings-modal">Cancel</button>
+                <button type="button" class="btn-primary" id="settings-save">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Wire the settings gear to open the layout/theme modal. The selected
+        // theme is a no-op selector until "modern" is implemented; legacy stays
+        // the live layout. Choosing modern only surfaces a not-implemented alert.
+        (function() {
+            const STORAGE_KEY = 'compendium-theme';
+            const body = document.body;
+
+            function openSettings() {
+                const current = localStorage.getItem(STORAGE_KEY) || 'legacy';
+                document.querySelectorAll('#settings-modal input[name="theme"]').forEach(function(input) {
+                    input.checked = (input.value === current);
+                });
+                openModal('settings-modal');
+            }
+
+            const settingsBtn = document.getElementById('settings-btn');
+            if (settingsBtn) settingsBtn.addEventListener('click', openSettings);
+
+            document.querySelectorAll('#settings-modal [data-close-modal]').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    closeModal(btn.getAttribute('data-close-modal'));
+                });
+            });
+
+            const saveBtn = document.getElementById('settings-save');
+            if (saveBtn) {
+                saveBtn.addEventListener('click', function() {
+                    const selected = document.querySelector('#settings-modal input[name="theme"]:checked');
+                    const theme = selected ? selected.value : 'legacy';
+                    if (theme === 'modern') {
+                        // Theme 2 is scaffolded but not yet built out.
+                        alert('Modern theme is not implemented yet.');
+                        closeModal('settings-modal');
+                        return;
+                    }
+                    localStorage.setItem(STORAGE_KEY, theme);
+                    body.classList.remove('theme-legacy', 'theme-modern');
+                    body.classList.add('theme-' + theme);
+                    closeModal('settings-modal');
+                });
+            }
+        })();
+    </script>
 </body>
 </html>

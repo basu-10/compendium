@@ -232,12 +232,18 @@ def init_db():
     _backfill_positions(conn, cursor, 'statements', 'topic_id')
     _backfill_positions(conn, cursor, 'attachments', 'statement_id')
     
+    _migrate_domains(conn, cursor)
+
     cursor.execute('SELECT COUNT(*) FROM domains')
     if cursor.fetchone()[0] == 0:
         cursor.executemany('INSERT INTO domains (name, description) VALUES (?, ?)', [
             ('Computer Science', 'Architecture, backend dev, AI implementations, and databases.'),
             ('Markets & Economics', 'Macro analysis, company 10-K reports, and asset classes.'),
-            ('Literature & Society', 'Classic texts, parallel readings, and sociopolitical deep dives.')
+            ('Literature, Media', 'Classic texts, parallel readings, literary criticism, and media.'),
+            ('Society, Culture', 'Sociopolitical deep dives, culture, and social structures.'),
+            ('Life Sciences', 'Physics, chemistry, biology, and the natural sciences.'),
+            ('Math/Statistics/Logic', 'Mathematics, statistics, and formal logic.'),
+            ('History', 'Historical eras, events, and their interpretation.')
         ])
 
     # Index foreign-key child columns so cascade deletes and the per-delete
@@ -316,6 +322,75 @@ def _migrate_attachments_table(conn, cursor):
     finally:
         cursor.execute('PRAGMA foreign_keys = ON')
         conn.isolation_level = prior_isolation
+
+
+def _migrate_domains(conn, cursor):
+    """Split the legacy 'Literature & Society' domain and add new domains.
+
+    Run on every startup so existing databases converge to the current domain
+    set without re-seeding. Idempotent: each change is guarded so repeat runs
+    are safe, and it is a no-op when the schema already matches.
+    """
+    # Split 'Literature & Society' into 'Literature' and 'Society'. The legacy
+    # domain's existing topics stay attached to 'Literature'; 'Society' starts
+    # empty so the split is reversible and never destroys user data.
+    cursor.execute("SELECT id FROM domains WHERE name = 'Literature & Society'")
+    legacy = cursor.fetchone()
+    if legacy:
+        legacy_id = legacy[0]
+        cursor.execute(
+            "INSERT OR IGNORE INTO domains (name, description) VALUES (?, ?)",
+            ('Literature', 'Classic texts, parallel readings, and literary criticism.'),
+        )
+        cursor.execute(
+            "INSERT OR IGNORE INTO domains (name, description) VALUES (?, ?)",
+            ('Society', 'Sociopolitical deep dives, culture, and social structures.'),
+        )
+        cursor.execute("SELECT id FROM domains WHERE name = 'Literature'")
+        literature_id = cursor.fetchone()[0]
+        cursor.execute(
+            "UPDATE topics SET domain_id = ? WHERE domain_id = ?",
+            (literature_id, legacy_id),
+        )
+        cursor.execute("DELETE FROM domains WHERE id = ?", (legacy_id,))
+
+    # Rename domains introduced in an earlier seed so existing databases match
+    # the current naming. If the target name already exists we merge the source
+    # domain's topics into it before dropping the source, so no data is lost.
+    for old_name, new_name in [
+        ('Literature', 'Literature, Media'),
+        ('Society', 'Society, Culture'),
+    ]:
+        cursor.execute("SELECT id FROM domains WHERE name = ?", (old_name,))
+        source = cursor.fetchone()
+        if not source:
+            continue
+        source_id = source[0]
+        cursor.execute("SELECT id FROM domains WHERE name = ?", (new_name,))
+        target = cursor.fetchone()
+        if target:
+            target_id = target[0]
+            cursor.execute(
+                "UPDATE topics SET domain_id = ? WHERE domain_id = ?",
+                (target_id, source_id),
+            )
+            cursor.execute("DELETE FROM domains WHERE id = ?", (source_id,))
+        else:
+            cursor.execute(
+                "UPDATE domains SET name = ? WHERE id = ?",
+                (new_name, source_id),
+            )
+
+    # Add the domains introduced after the original seed.
+    for name, description in [
+        ('Life Sciences', 'Physics, chemistry, biology, and the natural sciences.'),
+        ('Math/Statistics/Logic', 'Mathematics, statistics, and formal logic.'),
+        ('History', 'Historical eras, events, and their interpretation.'),
+    ]:
+        cursor.execute(
+            "INSERT OR IGNORE INTO domains (name, description) VALUES (?, ?)",
+            (name, description),
+        )
 
 
 @app.route('/')

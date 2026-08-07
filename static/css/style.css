@@ -2242,3 +2242,75 @@ p {
         width: 100%;
     }
 }
+
+/* --- Themes / layouts ---
+ * "legacy" is the current layout (the default) and keeps working unchanged.
+ * "modern" is scaffolded here as the future theme 2; selecting it currently
+ * only triggers a not-implemented alert. Styles for theme-modern go below this
+ * block when the new layout is built out. */
+body.theme-legacy .app-layout {
+    /* Current/default layout. Intentionally empty so legacy has no overrides
+     * and continues to render exactly as before. */
+}
+
+body.theme-modern .app-layout {
+    /* TODO: theme 2 layout styles go here. */
+}
+
+/* Settings modal: layout/theme picker */
+.settings-modal {
+    max-width: 420px;
+}
+
+.settings-group {
+    border: none;
+    margin: 0;
+    padding: 0;
+}
+
+.settings-group legend {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin-bottom: 0.75rem;
+}
+
+.theme-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 0.6rem;
+    cursor: pointer;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+.theme-option:hover {
+    border-color: var(--text-secondary);
+}
+
+.theme-option input[type="radio"] {
+    margin-top: 0.2rem;
+    accent-color: var(--accent);
+}
+
+.theme-option label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    cursor: pointer;
+}
+
+.theme-option-name {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.theme-option-desc {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}

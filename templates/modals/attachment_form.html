@@ -3,23 +3,39 @@
 <form id="attach-form-{{ statement_id }}" class="add-form" method="POST" action="{{ url_for('create_attachment') }}" enctype="multipart/form-data">
     <input type="hidden" name="statement_id" value="{{ statement_id }}">
     <h3 id="{{ modal_id }}-title">{{ title or 'Attach Asset' }}</h3>
-    <p class="modal-hint">The asset type is detected automatically from what you provide.</p>
+    <p class="modal-hint">Pick how you want to add this asset &mdash; paste text/URL or upload a file. The type is detected automatically.</p>
 
     <div class="form-group">
         <label for="att-title-{{ statement_id }}">Title <span class="optional">(optional)</span></label>
         <input type="text" id="att-title-{{ statement_id }}" name="title" placeholder="Leave blank to use the file name">
     </div>
 
-    <div class="form-group">
-        <label for="att-content-{{ statement_id }}">Content / URL <span class="optional">(optional)</span></label>
-        <textarea id="att-content-{{ statement_id }}" name="content" rows="4"
-                  placeholder="Paste text to make a rich text note, or a https:// link"></textarea>
+    <div class="attach-tabs" role="tablist" aria-label="Asset input method">
+        <button type="button" class="attach-tab active" role="tab" aria-selected="true"
+                id="tab-paste-{{ statement_id }}" aria-controls="panel-paste-{{ statement_id }}"
+                data-tab="paste">Paste Text / URL</button>
+        <button type="button" class="attach-tab" role="tab" aria-selected="false"
+                id="tab-upload-{{ statement_id }}" aria-controls="panel-upload-{{ statement_id }}"
+                data-tab="upload">Upload File</button>
     </div>
 
-    <div class="form-group drop-or-upload">
-        <label for="att-file-{{ statement_id }}">Upload <span class="optional">(optional)</span></label>
-        <input type="file" id="att-file-{{ statement_id }}" name="file">
-        <span class="file-hint" id="file-hint-{{ statement_id }}"></span>
+    <div class="attach-tab-panel active" id="panel-paste-{{ statement_id }}" role="tabpanel"
+         aria-labelledby="tab-paste-{{ statement_id }}">
+        <div class="form-group">
+            <label for="att-content-{{ statement_id }}">Content / URL <span class="optional">(optional)</span></label>
+            <textarea id="att-content-{{ statement_id }}" name="content" rows="4"
+                      placeholder="Paste text to make a rich text note, or a https:// link"></textarea>
+            <span class="form-hint">A bare https:// link makes a link asset; any other text makes a rich text note.</span>
+        </div>
+    </div>
+
+    <div class="attach-tab-panel" id="panel-upload-{{ statement_id }}" role="tabpanel"
+         aria-labelledby="tab-upload-{{ statement_id }}" hidden>
+        <div class="form-group drop-or-upload">
+            <label for="att-file-{{ statement_id }}">Upload <span class="optional">(optional)</span></label>
+            <input type="file" id="att-file-{{ statement_id }}" name="file">
+            <span class="file-hint" id="file-hint-{{ statement_id }}"></span>
+        </div>
     </div>
 
     <div class="form-group">
@@ -32,4 +48,43 @@
         <button type="button" class="btn-secondary" onclick="closeModal('{{ modal_id }}')">Cancel</button>
     </div>
 </form>
+
+<script>
+(function () {
+    var root = document.getElementById('{{ modal_id }}');
+    if (!root) return;
+    var tabs = root.querySelectorAll('.attach-tab');
+    function selectTab(name) {
+        tabs.forEach(function (t) {
+            var active = t.dataset.tab === name;
+            t.classList.toggle('active', active);
+            t.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        root.querySelectorAll('.attach-tab-panel').forEach(function (p) {
+            var active = p.id === 'panel-' + name + '-{{ statement_id }}';
+            p.classList.toggle('active', active);
+            if (active) { p.removeAttribute('hidden'); } else { p.setAttribute('hidden', ''); }
+        });
+        if (name === 'paste') {
+            var c = root.querySelector('#att-content-{{ statement_id }}');
+            if (c) c.focus();
+        } else {
+            var f = root.querySelector('#att-file-{{ statement_id }}');
+            if (f) f.focus();
+        }
+    }
+    tabs.forEach(function (t) {
+        t.addEventListener('click', function () { selectTab(t.dataset.tab); });
+    });
+    // Switching tabs clears the other input so the two methods stay mutually exclusive.
+    var contentEl = root.querySelector('#att-content-{{ statement_id }}');
+    var fileEl = root.querySelector('#att-file-{{ statement_id }}');
+    if (contentEl) contentEl.addEventListener('input', function () {
+        if (contentEl.value.trim() && fileEl && fileEl.value) { fileEl.value = ''; }
+    });
+    if (fileEl) fileEl.addEventListener('change', function () {
+        if (fileEl.value && contentEl && contentEl.value.trim()) { contentEl.value = ''; }
+    });
+})();
+</script>
 {% endblock %}

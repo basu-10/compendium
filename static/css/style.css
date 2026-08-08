@@ -377,6 +377,19 @@ p {
     text-decoration: none;
     color: inherit;
     display: block;
+    position: relative;
+}
+
+/* Toolbar overlays the card's top-right corner on hover/focus instead of
+   taking up layout width, so it never squashes the title and description. */
+.card .hover-actions,
+.card-in-folder .hover-actions {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 60%;
 }
 
 .card:hover {

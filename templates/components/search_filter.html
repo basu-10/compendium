@@ -1,0 +1,10 @@
+{# In-page search/filter form, reused on domain + all-domains pages.
+   GETs `?q=` back to the current route; Clear drops the param entirely so an
+   empty query is byte-identical to a fresh page load. #}
+<form method="get" class="search-filter" role="search">
+    <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+    <input type="text" name="q" value="{{ q or '' }}" placeholder="Search this view…" aria-label="Search">
+    {% if q %}
+    <a class="search-clear" href="{{ request.path }}" aria-label="Clear search">Clear</a>
+    {% endif %}
+</form>

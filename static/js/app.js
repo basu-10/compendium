@@ -1,3 +1,32 @@
+// --- In-page topic search ---
+// Wire the existing (inert) pane-search box to a server-side ?q= reload. A
+// debounce avoids a request on every keystroke; Enter submits immediately. The
+// active-statement evidence is re-derived server-side, so it survives the reload.
+function initPaneSearch() {
+    const input = document.getElementById('pane-search-input');
+    if (!input) return;
+    let timer = null;
+    function submit() {
+        const value = input.value.trim();
+        if (value) {
+            window.location.search = '?q=' + encodeURIComponent(value);
+        } else {
+            window.location.search = '';
+        }
+    }
+    input.addEventListener('input', function() {
+        clearTimeout(timer);
+        timer = setTimeout(submit, 350);
+    });
+    input.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            clearTimeout(timer);
+            submit();
+        }
+    });
+}
+
 // --- Modal Management ---
 function openModal(modalId) {
     const modal = document.getElementById(modalId);

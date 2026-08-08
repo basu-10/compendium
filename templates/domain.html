@@ -120,6 +120,14 @@
     </div>
     <p style="margin-bottom: 1.5rem;">{{ domain.description }}</p>
 
+    {% include "components/search_filter.html" %}
+    {% if q %}
+    <p class="search-results-note">
+        Results for &ldquo;{{ q }}&rdquo;
+        {% if not folder_tree and not loose_topics %}&mdash; nothing matched.{% endif %}
+    </p>
+    {% endif %}
+
     {% set add_folder_modal_id = 'add-folder-' ~ domain.id %}
     {% set modal_id = add_folder_modal_id %}
     {% set domain_id = domain.id %}

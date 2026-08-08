@@ -441,15 +441,26 @@ def about():
 @app.route('/alldomains')
 def all_domains():
     conn = get_db()
-    domains = conn.execute('''
-        SELECT d.*, COUNT(t.id) as topic_count 
-        FROM domains d 
-        LEFT JOIN topics t ON d.id = t.domain_id 
-        GROUP BY d.id 
-        ORDER BY d.name
-    ''').fetchall()
+    q = request.args.get('q', '').strip()
+    if q:
+        domains = conn.execute('''
+            SELECT d.*, COUNT(t.id) as topic_count
+            FROM domains d
+            LEFT JOIN topics t ON d.id = t.domain_id
+            WHERE LOWER(d.name) LIKE LOWER(?) OR LOWER(COALESCE(d.description,'')) LIKE LOWER(?)
+            GROUP BY d.id
+            ORDER BY d.name
+        ''', (f"%{q}%", f"%{q}%")).fetchall()
+    else:
+        domains = conn.execute('''
+            SELECT d.*, COUNT(t.id) as topic_count 
+            FROM domains d 
+            LEFT JOIN topics t ON d.id = t.domain_id 
+            GROUP BY d.id 
+            ORDER BY d.name
+        ''').fetchall()
     conn.close()
-    return render_template('alldomains.html', domains=domains)
+    return render_template('alldomains.html', domains=domains, q=q)
 
 
 @app.route('/dashboard')
@@ -527,21 +538,6 @@ def domain(domain_id):
         conn.close()
         flash('Domain not found')
         return redirect(url_for('all_domains'))
-    # Build the folder tree for this domain. Each node carries its own topics
-    # plus aggregate statement/asset counts over its entire subtree, so the UI
-    # can show both the immediate contents and the rolled-up totals.
-    folders = conn.execute(
-        'SELECT * FROM folders WHERE domain_id = ? ORDER BY name', (domain_id,)
-    ).fetchall()
-    folder_tree = build_folder_tree(conn, folders)
-    # Flat, depth-indented folder list for the Move-topic <select>. Walk the
-    # nested tree so parent folders always precede their children.
-    all_folders = []
-    def walk(nodes, depth):
-        for n in nodes:
-            all_folders.append({'id': n['id'], 'name': n['name'], 'depth': depth, 'indent': '\u00a0' * (depth * 4)})
-            walk(n['children'], depth + 1)
-    walk(folder_tree, 0)
     # Topics with no folder (shouldn't happen post-backfill, but keep the page
     # honest if a topic exists with folder_id NULL).
     loose_topics = conn.execute('''
@@ -555,6 +551,60 @@ def domain(domain_id):
         GROUP BY t.id
         ORDER BY t.created_at DESC
     ''', (domain_id,)).fetchall()
+    folders = conn.execute(
+        'SELECT * FROM folders WHERE domain_id = ? ORDER BY name', (domain_id,)
+    ).fetchall()
+    q = request.args.get('q', '').strip()
+    if q:
+        # Gather every topic id in this domain (root-folder subtrees + loose).
+        all_topic_ids = []
+        for f in folders:
+            _, sub_topic_ids = get_folder_subtree(conn, f['id'])
+            all_topic_ids.extend(sub_topic_ids)
+        all_topic_ids.extend(t['id'] for t in loose_topics)
+        matched = topic_ids_matching(conn, all_topic_ids, q)
+
+        # A folder is kept if its own name/desc matches OR it directly contains a
+        # matched topic OR any descendant folder is kept. A recursive walk over
+        # the folder list preserves ancestors of a deep match (no orphans).
+        children_of = {}
+        folder_by_id = {}
+        for f in folders:
+            children_of.setdefault(f['parent_id'], []).append(f['id'])
+            folder_by_id[f['id']] = f
+
+        def folder_matches(folder_id):
+            f = folder_by_id[folder_id]
+            if q.lower() in (f['name'] or '').lower() \
+               or q.lower() in (f['description'] or '').lower():
+                return True
+            for child_id in children_of.get(folder_id, []):
+                if folder_matches(child_id):
+                    return True
+            return False
+
+        kept_ids = set()
+        for f in folders:
+            fid = f['id']
+            name_desc_match = (q.lower() in (f['name'] or '').lower()
+                               or q.lower() in (f['description'] or '').lower())
+            contains_matched = any(tid in matched for tid in
+                                  get_folder_subtree(conn, fid)[1])
+            if name_desc_match or contains_matched or folder_matches(fid):
+                kept_ids.add(fid)
+        folders = [f for f in folders if f['id'] in kept_ids]
+        loose_topics = [t for t in loose_topics if t['id'] in matched
+                        or q.lower() in (t['name'] or '').lower()
+                        or q.lower() in (t['description'] or '').lower()]
+    folder_tree = build_folder_tree(conn, folders)
+    # Flat, depth-indented folder list for the Move-topic <select>. Walk the
+    # nested tree so parent folders always precede their children.
+    all_folders = []
+    def walk(nodes, depth):
+        for n in nodes:
+            all_folders.append({'id': n['id'], 'name': n['name'], 'depth': depth, 'indent': '\u00a0' * (depth * 4)})
+            walk(n['children'], depth + 1)
+    walk(folder_tree, 0)
     conn.close()
     return render_template(
         'domain.html',
@@ -562,6 +612,7 @@ def domain(domain_id):
         folder_tree=folder_tree,
         all_folders=all_folders,
         loose_topics=loose_topics,
+        q=q,
     )
 
 @app.route('/topic/<int:topic_id>')
@@ -610,6 +661,29 @@ def topic(topic_id):
         attachments = conn.execute(f'SELECT * FROM attachments WHERE statement_id IN ({placeholders}) ORDER BY position ASC, created_at DESC', statement_ids).fetchall()
     else:
         attachments = []
+    q = request.args.get('q', '').strip()
+    if q:
+        pat = f"%{q}%"
+        # A statement matches if its own text matches, or the topic name/desc
+        # matches (show all its attachments either way).
+        topic_match = (q.lower() in (topic['name'] or '').lower()
+                       or q.lower() in (topic['description'] or '').lower())
+        stmt_match = {s['id'] for s in statements if pat.lower() in (s['text'] or '').lower()}
+        keep_stmt_ids = stmt_match | ({s['id'] for s in statements} if topic_match else set())
+        # Attachments: keep all for kept statements unless only an attachment title
+        # matched (then keep just the matching attachment).
+        att_match = {a['id'] for a in attachments if pat.lower() in (a['title'] or '').lower()}
+        statements = [s for s in statements if s['id'] in keep_stmt_ids]
+        statement_ids = [s['id'] for s in statements]
+        if statement_ids:
+            placeholders = ','.join('?' * len(statement_ids))
+            filtered_ids = set(statement_ids)
+            attachments = [a for a in attachments
+                           if a['statement_id'] in filtered_ids
+                           and (a['statement_id'] in stmt_match or a['id'] in att_match
+                                or topic_match)]
+        else:
+            attachments = []
     attachments_by_statement = {}
     for att in attachments:
         attachments_by_statement.setdefault(att['statement_id'], []).append(att)
@@ -650,6 +724,7 @@ def topic(topic_id):
         asset_kind=asset_kind,
         preview_text=preview_text,
         CONTENT_ONLY_TYPES=CONTENT_ONLY_TYPES,
+        q=q,
     )
 
 @app.route('/create_topic', methods=['POST'])
@@ -1258,6 +1333,29 @@ def save_table(attachment_id):
     if old_filename:
         _remove_upload(old_filename)
     return jsonify({'ok': True})
+
+
+def topic_ids_matching(conn, topic_ids, q):
+    """Subset of topic_ids whose name/desc, any statement text, or any
+    attachment title matches q (case-insensitive LIKE). All params bound."""
+    pat = f"%{q}%"
+    ids = list(topic_ids)
+    if not ids:
+        return set()
+    ph = ",".join("?" * len(ids))
+    matched = set()
+    matched |= {r["id"] for r in conn.execute(
+        f"SELECT id FROM topics WHERE id IN ({ph}) "
+        f"AND (LOWER(name) LIKE LOWER(?) OR LOWER(COALESCE(description,'')) LIKE LOWER(?))",
+        ids + [pat, pat])}
+    matched |= {r["topic_id"] for r in conn.execute(
+        f"SELECT DISTINCT topic_id FROM statements WHERE topic_id IN ({ph}) AND LOWER(text) LIKE LOWER(?)",
+        ids + [pat])}
+    matched |= {r["topic_id"] for r in conn.execute(
+        f"SELECT DISTINCT s.topic_id FROM attachments a JOIN statements s ON a.statement_id=s.id "
+        f"WHERE s.topic_id IN ({ph}) AND LOWER(COALESCE(a.title,'')) LIKE LOWER(?)",
+        ids + [pat])}
+    return matched
 
 
 def get_folder_subtree(conn, folder_id):

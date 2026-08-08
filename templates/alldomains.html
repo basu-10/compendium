@@ -6,6 +6,13 @@
 <div>
     <h1>All Domains</h1>
     <p style="margin-bottom: 2rem;">Select a knowledge domain to explore.</p>
+    {% include "components/search_filter.html" %}
+    {% if q %}
+    <p class="search-results-note">
+        Results for &ldquo;{{ q }}&rdquo;
+        {% if not domains %}&mdash; nothing matched.{% endif %}
+    </p>
+    {% endif %}
     <div class="grid">
         {% for domain in domains %}
         {% set domain_edit_modal_id = 'edit-domain-' ~ domain.id %}

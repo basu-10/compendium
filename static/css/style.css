@@ -611,6 +611,60 @@ p {
     align-items: center;
 }
 
+/* In-page search/filter form (domain + all-domains pages) */
+.search-filter {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    position: relative;
+    margin-bottom: 1.25rem;
+    max-width: 420px;
+}
+
+.search-filter .search-icon {
+    position: absolute;
+    left: 0.65rem;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+.search-filter input {
+    background-color: var(--bg-muted);
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 0.55rem 0.65rem 0.55rem 2.1rem;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+.search-filter input:focus {
+    background-color: var(--bg-surface);
+    border-color: var(--border);
+}
+
+.search-filter .search-clear {
+    flex: 0 0 auto;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--accent-teal);
+    text-decoration: none;
+    padding: 0.55rem 0.4rem;
+    white-space: nowrap;
+}
+
+.search-filter .search-clear:hover {
+    text-decoration: underline;
+}
+
+.search-results-note {
+    margin: -0.5rem 0 1.5rem;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
 /* Statements */
 .statement {
     position: relative;

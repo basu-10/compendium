@@ -620,6 +620,7 @@ p {
     padding: 1rem;
     margin-bottom: 0.75rem;
     border-radius: 6px;
+    min-height: 150px;
     cursor: pointer;
     transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
 }
@@ -718,10 +719,9 @@ p {
     overscroll-behavior: contain;
 }
 
-/* Add-row: a placeholder tile at the end of the statement list, matched in size
-   and padding to the statement cards so the two read as a single rhythm. It
-   flows inline with the statements (not sticky) and resizes with them as rows
-   are added or removed. */
+/* Add-row: a placeholder tile at the end of the statement list. It carries the
+   same 4px left border, padding, radius and margin as .statement so its box
+   size matches the statement cards exactly and the list reads as one rhythm. */
 .add-row {
     display: flex;
     flex-direction: column;
@@ -730,11 +730,13 @@ p {
     gap: 0.375rem;
     padding: 1rem;
     margin: 0 0 0.75rem 0;
+    min-height: 150px;
     font-family: inherit;
     font-size: 0.9rem;
     color: var(--text-muted);
     background-color: transparent;
     border: 1px dashed #d1d5db;
+    border-left: 4px dashed #d1d5db;
     border-radius: 6px;
     cursor: pointer;
     transition: color 0.2s, border-color 0.2s, background-color 0.2s;
@@ -2569,6 +2571,7 @@ body.theme-modern .topic .statement {
     border-radius: 12px;
     box-shadow: var(--shadow-sm);
     padding: 1.25rem;
+    min-height: 150px;
     transition: box-shadow 0.2s, transform 0.15s, border-top-color 0.2s;
 }
 
@@ -2615,6 +2618,9 @@ body.theme-modern .topic .add-row {
     flex: 1 1 260px;
     max-width: 320px;
     padding: 1.25rem;
+    border-left: none;
+    border-top: 3px dashed var(--border);
+    box-shadow: var(--shadow-sm);
 }
 
 /* Mobile: single-column statements and assets in modern theme. */

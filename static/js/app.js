@@ -597,6 +597,19 @@ function renderEvidenceCard(att) {
     heading.textContent = att.title;
     card.appendChild(heading);
 
+    const tags = (att.tags || '').split(',').map(function(t) { return t.trim(); }).filter(Boolean);
+    if (tags.length) {
+        const tagWrap = document.createElement('div');
+        tagWrap.className = 'evidence-tags';
+        tags.forEach(function(t) {
+            const tag = document.createElement('span');
+            tag.className = 'evidence-tag';
+            tag.textContent = t;
+            tagWrap.appendChild(tag);
+        });
+        card.appendChild(tagWrap);
+    }
+
     const preview = document.createElement('div');
     preview.className = 'evidence-preview';
     const fileUrl = filename ? '/uploads/' + encodeURIComponent(filename) : '';
@@ -685,8 +698,10 @@ function populateEditForm(attachmentId) {
         .then(function(full) {
             const title = form.querySelector('input[name="title"]');
             const content = form.querySelector('textarea[name="content"], input[name="content"]');
+            const tags = form.querySelector('input[name="tags"]');
             if (title && full.title != null) title.value = full.title;
             if (content && full.content != null) content.value = full.content;
+            if (tags && full.tags != null) tags.value = full.tags;
 
             // For rich text, swap the plain textarea for a Quill editor and keep
             // the underlying textarea as the field the form submits, syncing on

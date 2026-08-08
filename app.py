@@ -4,6 +4,7 @@ import os
 import shutil
 import csv
 import io
+import re
 import uuid
 from datetime import datetime
 
@@ -268,6 +269,7 @@ def init_db():
     # a sensible default (0) and are renumbered by creation order on first use.
     _ensure_column(conn, cursor, 'statements', 'position', 'INTEGER DEFAULT 0')
     _ensure_column(conn, cursor, 'attachments', 'position', 'INTEGER DEFAULT 0')
+    _ensure_column(conn, cursor, 'attachments', 'tags', 'TEXT')
     _backfill_positions(conn, cursor, 'statements', 'topic_id')
     _backfill_positions(conn, cursor, 'attachments', 'statement_id')
 
@@ -734,6 +736,7 @@ def topic(topic_id):
                 'kind': asset_kind(a['type'], a['filename']),
                 'preview': preview_text(a['content']),
                 'filename': a['filename'] or '',
+                'tags': a['tags'] or '',
                 **({'content': a['content']} if a['type'] not in CONTENT_ONLY_TYPES else {}),
             }
             for a in atts
@@ -925,41 +928,122 @@ def create_statement():
 
 @app.route('/create_attachment', methods=['POST'])
 def create_attachment():
+    # The smart attach modal never asks the user for a type; we infer it from
+    # whatever they provided (an uploaded file's extension, a URL, or free
+    # text). Title and tags are optional; one of file/content is required.
     statement_id = request.form.get('statement_id')
     title = request.form.get('title', '').strip()
-    att_type = request.form.get('type', 'link')
     content = request.form.get('content', '').strip()
+    tags = request.form.get('tags', '').strip()
     file = request.files.get('file')
-    filename = None
-    
-    if not statement_id or not title:
-        flash('Statement and title are required')
+
+    if not statement_id:
+        flash('Statement is required')
         return redirect(request.referrer or url_for('all_domains'))
-    
-    if att_type not in ASSET_TYPES:
+
+    source_name = (file.filename if file and file.filename else '') or ''
+    ext = source_name.rsplit('.', 1)[1].lower() if '.' in source_name else ''
+
+    # Resolve the attachment type from the inputs, in priority order:
+    #   1. an uploaded file -> type by extension (image/video/table/document)
+    #   2. a bare URL      -> link
+    #   3. any other text  -> richtext
+    att_type = None
+    if file and file.filename:
+        att_type = _infer_type_from_filename(file.filename)
+    elif _looks_like_url(content):
         att_type = 'link'
-    if att_type not in CONTENT_ONLY_TYPES and file and file.filename:
-        ext = _upload_extension(att_type, file.filename)
-        if ext is None:
-            flash('That file type is not allowed for this asset type')
-            return redirect(request.referrer or url_for('all_domains'))
-        filename = f"{uuid.uuid4().hex}.{ext}"
-        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        content = filename
-    elif att_type not in CONTENT_ONLY_TYPES and not content:
-        # File-backed types may instead point at a URL (e.g. a YouTube video or
-        # a hosted spreadsheet). Only reject when there is no file AND no URL,
-        # which would otherwise store a row that renders as /uploads/<empty>.
-        flash('A file or URL is required for this asset type')
+    elif content:
+        att_type = 'richtext'
+
+    if att_type is None:
+        flash('Add a title with some text, a URL, or upload a file')
         return redirect(request.referrer or url_for('all_domains'))
-    
+
+    # Default the title from the file name when the user left it blank.
+    if not title:
+        if source_name:
+            title = os.path.splitext(os.path.basename(source_name))[0] or 'Untitled'
+        elif content:
+            title = (content[:60] + '…') if len(content) > 60 else content
+        else:
+            title = 'Untitled'
+
     conn = get_db()
+    filename = None
+
+    if file and file.filename:
+        if _is_dangerous_extension(file.filename):
+            conn.close()
+            flash('That file type cannot be stored for security reasons')
+            return redirect(request.referrer or url_for('all_domains'))
+
+        # A document or richtext upload whose extension we can read as text
+        # (txt/md/rtf/doc/docx/odt/pdf) is pulled into native richtext storage
+        # instead of being kept as an opaque file download.
+        if att_type in ('richtext', 'document') and ext in RICHTEXT_DOC_EXTENSIONS:
+            # Pull the document's text into native richtext storage instead of
+            # keeping the binary file around as an opaque download.
+            tmp = f"{uuid.uuid4().hex}.{ext}"
+            os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], tmp))
+            extracted = _extract_text_from_file(tmp, ext)
+            if extracted is not None:
+                att_type = 'richtext'
+                content = extracted
+                filename = None
+                os.remove(os.path.join(app.config['UPLOAD_FOLDER'], tmp))
+            else:
+                # Couldn't read it: fall back to storing the file as a document.
+                att_type = 'document'
+                filename = tmp
+                content = tmp
+        elif att_type == 'table':
+            # Save the file, then try to convert a spreadsheet into native CSV
+            # Univer storage so it opens editable in-browser.
+            filename = f"{uuid.uuid4().hex}.{ext}"
+            os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            csv_text = _table_to_univer_csv(filename, ext)
+            if csv_text is not None:
+                content = UNIVER_DATA_PREFIX + csv_text
+                os.remove(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                filename = None
+            else:
+                content = filename
+        elif att_type in ALLOWED_EXTENSIONS:
+            # image/video/document: store the uploaded bytes, point content at it.
+            # A document extension we don't have an explicit allowlist entry for
+            # is kept as a generic "new file" rather than rejected.
+            upload_ext = _upload_extension(att_type, file.filename)
+            if upload_ext is None:
+                att_type = 'document'
+                upload_ext = ext or 'bin'
+            filename = f"{uuid.uuid4().hex}.{upload_ext}"
+            os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            content = filename
+        else:
+            # Unrecognised upload -> generic "new file" document.
+            att_type = 'document'
+            upload_ext = ext or 'bin'
+            filename = f"{uuid.uuid4().hex}.{upload_ext}"
+            os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            content = filename
+    elif att_type == 'link' and not content:
+        conn.close()
+        flash('A URL is required for a link asset')
+        return redirect(request.referrer or url_for('all_domains'))
+
+    if att_type not in ASSET_TYPES:
+        att_type = 'document'
+
     try:
         conn.execute(
-            'INSERT INTO attachments (statement_id, title, type, content, filename, position) '
-            'VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM attachments WHERE statement_id = ?))',
-            (statement_id, title, att_type, content, filename, statement_id)
+            'INSERT INTO attachments (statement_id, title, type, content, filename, tags, position) '
+            'VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM attachments WHERE statement_id = ?))',
+            (statement_id, title, att_type, content, filename, tags, statement_id)
         )
         conn.commit()
         topic_row = conn.execute(
@@ -1009,6 +1093,121 @@ def _is_dangerous_extension(filename):
     ext = filename.rsplit('.', 1)[1].lower()
     return ext in DANGEROUS_EXTENSIONS
 
+
+# Document extensions whose text payload we can pull into native richtext
+# storage on upload, instead of keeping the file as an opaque download. Plain
+# text/markdown/rtf are read directly; the heavier office formats are parsed
+# with the libraries available in this environment.
+RICHTEXT_DOC_EXTENSIONS = ('txt', 'md', 'markdown', 'rtf', 'doc', 'docx', 'odt', 'pdf')
+
+
+def _looks_like_url(value):
+    """Loose URL sniff: a scheme, or a host with a recognisable TLD/path."""
+    v = (value or '').strip()
+    if not v:
+        return False
+    if re.match(r'^[a-z][a-z0-9+.-]*://', v, re.I):
+        return True
+    return bool(re.match(r'^(www\.)?[a-z0-9-]+(\.[a-z]{2,})+(/|$)', v, re.I))
+
+
+def _extract_text_from_file(filename, ext):
+    """Best-effort plain-text extraction for a richtext document upload.
+
+    Returns the extracted text, or None when nothing usable could be read (the
+    caller then stores the file as an opaque document instead of richtext).
+    """
+    ext = (ext or '').lower()
+    try:
+        path = os.path.realpath(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        upload_dir = os.path.realpath(app.config['UPLOAD_FOLDER'])
+        if os.path.commonpath([upload_dir, path]) != upload_dir:
+            return None
+        if ext in ('txt', 'md', 'markdown'):
+            with open(path, 'r', encoding='utf-8', errors='replace') as fh:
+                return fh.read()
+        if ext == 'rtf':
+            return _extract_rtf(path)
+        if ext == 'docx':
+            try:
+                import docx
+                document = docx.Document(path)
+                return '\n'.join(p.text for p in document.paragraphs)
+            except Exception:
+                return None
+        if ext == 'doc':
+            try:
+                import docx2txt
+                return docx2txt.process(path) or None
+            except Exception:
+                return None
+        if ext == 'odt':
+            try:
+                import xml.etree.ElementTree as ET
+                with open(path, 'rb') as fh:
+                    root = ET.fromstring(fh.read())
+                ns = '{urn:oasis:names:tc:opendocument:xmlns:text:1.0}'
+                return '\n'.join(node.text or '' for node in root.iter(ns + 'p'))
+            except Exception:
+                return None
+        if ext == 'pdf':
+            try:
+                from PyPDF2 import PdfReader
+                reader = PdfReader(path)
+                return '\n'.join((page.extract_text() or '') for page in reader.pages)
+            except Exception:
+                return None
+    except Exception:
+        return None
+    return None
+
+
+def _extract_rtf(path):
+    """Strip RTF control words, keeping the visible text as plain text."""
+    try:
+        with open(path, 'r', encoding='utf-8', errors='replace') as fh:
+            data = fh.read()
+    except OSError:
+        return None
+    text = re.sub(r'\\[a-z]+\d*\s?', '', data, flags=re.I)
+    text = re.sub(r'[{}]', '', text)
+    text = re.sub(r'\\\n', '\n', text)
+    return text.strip()
+
+
+def _table_to_univer_csv(filename, ext):
+    """Parse a spreadsheet upload into a CSV string for native Univer storage.
+
+    csv/tsv are read directly; xls/xlsx/ods are parsed with openpyxl when the
+    first sheet is reachable. Returns the CSV text, or None for binary formats
+    we cannot parse (the caller then keeps the file as a table with a
+    download-only fallback).
+    """
+    ext = (ext or '').lower()
+    try:
+        path = os.path.realpath(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        upload_dir = os.path.realpath(app.config['UPLOAD_FOLDER'])
+        if os.path.commonpath([upload_dir, path]) != upload_dir:
+            return None
+        if ext in ('csv', 'tsv'):
+            with open(path, 'r', encoding='utf-8', errors='replace') as fh:
+                return fh.read()
+        if ext in ('xls', 'xlsx', 'ods'):
+            try:
+                import openpyxl
+                wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+                ws = wb.active
+                buf = io.StringIO()
+                writer = csv.writer(buf)
+                for row in ws.iter_rows(values_only=True):
+                    writer.writerow(['' if c is None else c for c in row])
+                return buf.getvalue()
+            except Exception:
+                return None
+    except Exception:
+        return None
+    return None
+
 @app.route('/upload_drop/<int:statement_id>', methods=['POST'])
 def upload_drop(statement_id):
     """Receive files dropped onto a statement's asset section.
@@ -1030,35 +1229,71 @@ def upload_drop(statement_id):
     for file in files:
         if not file or not file.filename:
             continue
-        if _is_dangerous_extension(file.filename):
-            results.append({'filename': file.filename, 'error': 'File type is not allowed for security reasons'})
+        source_name = file.filename
+        if _is_dangerous_extension(source_name):
+            results.append({'filename': source_name, 'error': 'File type is not allowed for security reasons'})
             continue
         # Unknown extensions fall back to the generic document type rather than
         # being rejected, so a drop never silently drops a user's file. The real
         # extension is preserved for those, while recognised types still go
         # through the strict per-type allowlist.
-        att_type = _infer_type_from_filename(file.filename)
-        ext = _upload_extension(att_type, file.filename)
-        if ext is None:
-            if att_type == 'document':
-                ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+        att_type = _infer_type_from_filename(source_name)
+        ext = source_name.rsplit('.', 1)[1].lower() if '.' in source_name else ''
+        title = os.path.splitext(os.path.basename(source_name))[0] or 'Untitled'
+
+        filename = None
+        content = ''
+        if file and ext in RICHTEXT_DOC_EXTENSIONS and att_type in ('document', 'richtext'):
+            # Document dropped: extract its text into native richtext storage.
+            tmp = f"{uuid.uuid4().hex}.{ext}"
+            os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], tmp))
+            extracted = _extract_text_from_file(tmp, ext)
+            if extracted is not None:
+                att_type = 'richtext'
+                content = extracted
+                os.remove(os.path.join(app.config['UPLOAD_FOLDER'], tmp))
             else:
-                results.append({'filename': file.filename, 'error': 'Unsupported file type'})
-                continue
-        filename = f"{uuid.uuid4().hex}.{ext}"
-        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        title = os.path.splitext(os.path.basename(file.filename))[0] or 'Untitled'
+                att_type = 'document'
+                filename = tmp
+                content = tmp
+        elif att_type == 'table':
+            upload_ext = ext or 'csv'
+            filename = f"{uuid.uuid4().hex}.{upload_ext}"
+            os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            csv_text = _table_to_univer_csv(filename, upload_ext)
+            if csv_text is not None:
+                content = UNIVER_DATA_PREFIX + csv_text
+                os.remove(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                filename = None
+            else:
+                content = filename
+        else:
+            upload_ext = _upload_extension(att_type, source_name)
+            if upload_ext is None:
+                if att_type == 'document':
+                    upload_ext = ext
+                else:
+                    results.append({'filename': source_name, 'error': 'Unsupported file type'})
+                    continue
+            filename = f"{uuid.uuid4().hex}.{upload_ext}"
+            os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            content = filename
+
+        if att_type not in ASSET_TYPES:
+            att_type = 'document'
         try:
             cursor = conn.execute(
-                'INSERT INTO attachments (statement_id, title, type, content, filename, position) '
-                'VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM attachments WHERE statement_id = ?))',
-                (statement_id, title, att_type, filename, filename, statement_id)
+                'INSERT INTO attachments (statement_id, title, type, content, filename, tags, position) '
+                'VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM attachments WHERE statement_id = ?))',
+                (statement_id, title, att_type, content, filename, '', statement_id)
             )
             conn.commit()
             new_id = cursor.lastrowid
             results.append({
-                'filename': file.filename,
+                'filename': source_name,
                 'id': new_id,
                 'attachment': {
                     'id': new_id,
@@ -1068,11 +1303,12 @@ def upload_drop(statement_id):
                     'kind': asset_kind(att_type, filename),
                     'preview': '',
                     'filename': filename,
+                    'tags': '',
                 },
             })
         except sqlite3.IntegrityError:
             conn.rollback()
-            results.append({'filename': file.filename, 'error': 'Could not save attachment'})
+            results.append({'filename': source_name, 'error': 'Could not save attachment'})
 
     conn.close()
     return {'results': results}
@@ -1169,6 +1405,7 @@ def update_attachment():
     title = request.form.get('title', '').strip()
     att_type = request.form.get('type', '')
     content = request.form.get('content', '').strip()
+    tags = request.form.get('tags', '').strip()
     file = request.files.get('file')
 
     if not attachment_id or not title:
@@ -1226,8 +1463,8 @@ def update_attachment():
 
     try:
         conn.execute(
-            'UPDATE attachments SET title = ?, type = ?, content = ?, filename = ? WHERE id = ?',
-            (title, att_type, content, filename, attachment_id)
+            'UPDATE attachments SET title = ?, type = ?, content = ?, filename = ?, tags = ? WHERE id = ?',
+            (title, att_type, content, filename, tags, attachment_id)
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -1274,7 +1511,7 @@ def attachment(attachment_id):
     # previews, not every richtext body. The modal and edit form call this.
     conn = get_db()
     row = conn.execute(
-        'SELECT id, statement_id, title, type, content, filename FROM attachments WHERE id = ?',
+        'SELECT id, statement_id, title, type, content, filename, tags FROM attachments WHERE id = ?',
         (attachment_id,)
     ).fetchone()
     conn.close()
@@ -1288,6 +1525,7 @@ def attachment(attachment_id):
         'kind': asset_kind(row['type'], row['filename']),
         'content': row['content'],
         'filename': row['filename'] or '',
+        'tags': row['tags'] or '',
     }
     return payload
 

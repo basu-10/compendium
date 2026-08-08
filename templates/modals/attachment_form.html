@@ -3,31 +3,32 @@
 <form id="attach-form-{{ statement_id }}" class="add-form" method="POST" action="{{ url_for('create_attachment') }}" enctype="multipart/form-data">
     <input type="hidden" name="statement_id" value="{{ statement_id }}">
     <h3 id="{{ modal_id }}-title">{{ title or 'Attach Asset' }}</h3>
+    <p class="modal-hint">The asset type is detected automatically from what you provide.</p>
+
     <div class="form-group">
-        <label for="att-title-{{ statement_id }}">Title</label>
-        <input type="text" id="att-title-{{ statement_id }}" name="title" required>
+        <label for="att-title-{{ statement_id }}">Title <span class="optional">(optional)</span></label>
+        <input type="text" id="att-title-{{ statement_id }}" name="title" placeholder="Leave blank to use the file name">
     </div>
+
     <div class="form-group">
-        <label for="att-type-{{ statement_id }}">Type</label>
-        <select id="att-type-{{ statement_id }}" name="type" onchange="toggleFileInput('{{ statement_id }}', this.value)">
-            <option value="link">Link</option>
-            <option value="richtext">Rich Text</option>
-            <option value="image">Image</option>
-            <option value="video">Video</option>
-            <option value="table">Table / Spreadsheet</option>
-            <option value="document">Other File</option>
-        </select>
+        <label for="att-content-{{ statement_id }}">Content / URL <span class="optional">(optional)</span></label>
+        <textarea id="att-content-{{ statement_id }}" name="content" rows="4"
+                  placeholder="Paste text to make a rich text note, or a https:// link"></textarea>
     </div>
-    <div class="form-group" id="file-group-{{ statement_id }}" style="display: none;">
-        <label for="att-file-{{ statement_id }}">Upload File</label>
-        <input type="file" id="att-file-{{ statement_id }}" name="file" disabled>
+
+    <div class="form-group drop-or-upload">
+        <label for="att-file-{{ statement_id }}">Upload <span class="optional">(optional)</span></label>
+        <input type="file" id="att-file-{{ statement_id }}" name="file">
+        <span class="file-hint" id="file-hint-{{ statement_id }}"></span>
     </div>
-    <div class="form-group" id="url-group-{{ statement_id }}">
-        <label for="att-content-{{ statement_id }}">URL / Content</label>
-        <input type="text" id="att-content-{{ statement_id }}" name="content" placeholder="https://...">
+
+    <div class="form-group">
+        <label for="att-tags-{{ statement_id }}">Tags <span class="optional">(optional)</span></label>
+        <input type="text" id="att-tags-{{ statement_id }}" name="tags" placeholder="comma, separated">
     </div>
+
     <div class="form-actions">
-        <button type="submit" class="btn-primary">Add Attachment</button>
+        <button type="submit" class="btn-primary">Add Asset</button>
         <button type="button" class="btn-secondary" onclick="closeModal('{{ modal_id }}')">Cancel</button>
     </div>
 </form>

@@ -979,6 +979,23 @@ p {
     color: var(--text-primary);
 }
 
+.evidence-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-bottom: 0.5rem;
+}
+
+.evidence-tag {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    background-color: var(--tag-bg);
+    border-radius: 999px;
+    padding: 0.1rem 0.55rem;
+    line-height: 1.5;
+}
+
 /* Per-kind previews */
 .evidence-preview {
     margin-top: auto;
@@ -1029,6 +1046,25 @@ p {
 }
 
 .form-hint {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 0.35rem;
+}
+
+.modal-hint {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin: -0.5rem 0 1rem;
+}
+
+.optional {
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: var(--text-muted);
+}
+
+.file-hint {
+    display: block;
     font-size: 0.8rem;
     color: var(--text-muted);
     margin-top: 0.35rem;

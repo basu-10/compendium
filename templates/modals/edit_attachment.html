@@ -24,6 +24,12 @@
         </select>
     </div>
 
+    <div class="form-group">
+        <label for="edit-att-tags-{{ attachment.id }}">Tags <span class="optional">(optional)</span></label>
+        <input type="text" id="edit-att-tags-{{ attachment.id }}" name="tags"
+               value="{{ attachment.tags or '' }}" placeholder="comma, separated">
+    </div>
+
     {% set is_content_type = attachment.type in CONTENT_ONLY_TYPES %}
     <div class="form-group" id="file-group-edit-{{ attachment.id }}"
          style="display: {% if is_content_type %}none{% else %}block{% endif %};">

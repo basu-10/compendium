@@ -33,6 +33,15 @@
 
     <h4>{{ att.title }}</h4>
 
+    {% if att.tags %}
+    <div class="evidence-tags">
+        {% for tag in att.tags.split(',') %}
+        {% set t = tag.strip() %}
+        {% if t %}<span class="evidence-tag">{{ t }}</span>{% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+
     <div class="evidence-preview">
         {% if kind == 'image' %}
             <img class="evidence-thumb"

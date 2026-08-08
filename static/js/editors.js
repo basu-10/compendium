@@ -1,17 +1,19 @@
-// --- Rich-text (Quill) + Spreadsheet (Univer) integration ---
+// --- Rich-text (CKEditor 5) + Spreadsheet (Univer) integration ---
 // Loaded after app.js. Exposes hooks used by the evidence card renderer and the
 // attachment edit modal. Both editors are rethemed from CSS variables (see
 // compendium.css) so they match the active legacy/modern theme.
 //
 // Design notes:
-//  - Quill is synchronous and reliable, so rich text uses it directly for both
-//    read (readOnly) and edit (toolbar) modes.
+//  - CKEditor 5 classic build (CDN) is used for rich text. It supports tables
+//    natively and has high paste fidelity. Both read-only and editable modes
+//    use the same editor instance with `isReadOnly` toggle.
 //  - Univer is heavy and its 0.1.x IIFE API is version-sensitive. Every call is
 //    wrapped so a missing global or a construction failure degrades gracefully
 //    to a read-only HTML table + download link instead of breaking the card.
 
 const COMPENDIUM_EDITORS = (function () {
     let univerInstances = []; // track for teardown on collapse/theme change
+    let ckeditorInstances = []; // track for potential cleanup
 
     function teardownUniver() {
         univerInstances.forEach(function (u) {
@@ -20,9 +22,16 @@ const COMPENDIUM_EDITORS = (function () {
         univerInstances = [];
     }
 
-    // ---- Quill rich text -------------------------------------------------
-    function renderRichText(container, html, readOnly) {
-        if (typeof Quill === 'undefined') {
+    function teardownCkeditors() {
+        ckeditorInstances.forEach(function (editor) {
+            try { if (editor && editor.destroy) editor.destroy(); } catch (e) { /* noop */ }
+        });
+        ckeditorInstances = [];
+    }
+
+    // ---- CKEditor 5 rich text ---------------------------------------------
+    async function renderRichText(container, html, readOnly) {
+        if (typeof ClassicEditor === 'undefined') {
             // Library failed to load: show the raw text so content is never lost.
             const pre = document.createElement('pre');
             pre.className = 'richtext-body';
@@ -37,32 +46,83 @@ const COMPENDIUM_EDITORS = (function () {
         const editor = document.createElement('div');
         host.appendChild(editor);
 
-        const quill = new Quill(editor, {
-            theme: 'snow',
-            readOnly: !!readOnly,
-            modules: readOnly
-                ? {}
+        const editorConfig = {
+            toolbar: readOnly
+                ? []
                 : {
-                    toolbar: [
-                        [{ header: [1, 2, 3, false] }],
-                        ['bold', 'italic', 'underline', 'strike'],
-                        [{ list: 'ordered' }, { list: 'bullet' }],
-                        ['blockquote', 'code-block', 'link'],
-                        ['clean'],
+                    items: [
+                        'heading',
+                        '|',
+                        'bold',
+                        'italic',
+                        'underline',
+                        'strikethrough',
+                        'code',
+                        'blockquote',
+                        '|',
+                        'bulletedList',
+                        'numberedList',
+                        '|',
+                        'link',
+                        'insertTable',
+                        '|',
+                        'undo',
+                        'redo',
                     ],
+                    shouldNotGroupWhenFull: true,
                 },
-        });
-        quill.clipboard.dangerouslyPasteHTML(html || '');
-        // Seed an empty paragraph so an empty doc does not render a stray <p><br></p>.
-        if (!html) quill.setText('');
+            table: {
+                contentToolbar: [
+                    'tableColumn',
+                    'tableRow',
+                    'mergeTableCells',
+                    'tableProperties',
+                    'tableCellProperties',
+                ],
+            },
+            image: {
+                toolbar: [
+                    'imageTextAlternative',
+                    '|',
+                    'imageStyle:inline',
+                    'imageStyle:block',
+                    'imageStyle:side',
+                    '|',
+                    'toggleImageCaption',
+                ],
+            },
+            link: {
+                addTargetToExternalLinks: true,
+                defaultProtocol: 'https',
+            },
+            readOnly: !!readOnly,
+        };
 
-        if (!readOnly) {
-            container.__getQuillHTML = function () { return quill.root.innerHTML; };
+        try {
+            const ckeditor = await ClassicEditor.create(editor, editorConfig);
+            ckeditor.setData(html || '');
+            ckeditorInstances.push(ckeditor);
+
+            if (!readOnly) {
+                // Return an object with getData() for form sync
+                return {
+                    getData: () => ckeditor.getData(),
+                    editor: ckeditor,
+                };
+            }
+            return ckeditor;
+        } catch (e) {
+            console.error('CKEditor initialization failed:', e);
+            // Fallback: render as plain text
+            host.innerHTML = '';
+            const pre = document.createElement('pre');
+            pre.className = 'richtext-body';
+            pre.textContent = html || '';
+            host.appendChild(pre);
         }
-        return quill;
     }
 
-    // ---- Univer spreadsheet ---------------------------------------------
+    // ---- Univer spreadsheet -----------------------------------------------
     // Build a minimal Univer Sheets workbook from a 2D array of strings.
     function buildUniver(container, rows, editable) {
         if (typeof window.Univer === 'undefined' || !window.Univer.Core) {
@@ -226,7 +286,7 @@ const COMPENDIUM_EDITORS = (function () {
         host.insertAdjacentElement('afterend', bar);
     }
 
-    // ---- Image (display only) -------------------------------------------
+    // ---- Image (display only) ---------------------------------------------
     // No library integration yet: render the native <img> inside a themed frame.
     function renderImage(container, src, alt) {
         const frame = document.createElement('div');
@@ -240,7 +300,7 @@ const COMPENDIUM_EDITORS = (function () {
         container.appendChild(frame);
     }
 
-    // ---- Video (Plyr playback) ------------------------------------------
+    // ---- Video (Plyr playback) --------------------------------------------
     // Wraps a native <video> in Plyr for consistent, themeable controls. If
     // Plyr is unavailable the plain <video controls> remains fully functional.
     function renderVideo(container, src, title) {
@@ -274,6 +334,7 @@ const COMPENDIUM_EDITORS = (function () {
     // Univer canvases and free memory.
     function destroyAll() {
         teardownUniver();
+        teardownCkeditors();
     }
 
     return {
@@ -283,6 +344,7 @@ const COMPENDIUM_EDITORS = (function () {
         renderVideo: renderVideo,
         destroyAll: destroyAll,
         teardownUniver: teardownUniver,
+        teardownCkeditors: teardownCkeditors,
     };
 })();
 

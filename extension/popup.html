@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Save to Compendium</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 13px;
+      width: 380px;
+      max-height: 600px;
+      overflow: auto;
+      color: #1a1a1a;
+      background: #fff;
+    }
+    .header {
+      padding: 12px 16px;
+      border-bottom: 1px solid #e5e5e5;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #fafafa;
+    }
+    .header svg { width: 20px; height: 20px; color: #0d9488; }
+    .header h1 { font-size: 14px; font-weight: 600; }
+    .content { padding: 16px; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-size: 12px; font-weight: 500; margin-bottom: 6px; color: #374151; }
+    .form-group select, .form-group input[type="text"] {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      background: #fff;
+    }
+    .form-group select:focus, .form-group input:focus {
+      outline: none;
+      border-color: #0d9488;
+      box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.15);
+    }
+    .nested-selects { display: flex; flex-direction: column; gap: 8px; }
+    .nested-selects select { width: 100%; }
+    .select-row { display: flex; gap: 8px; }
+    .select-row select { flex: 1; }
+    .optgroup-label { font-weight: 600; color: #6b7280; font-size: 12px; padding: 4px 0; }
+    .tags-hint { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+    .btn-primary {
+      width: 100%;
+      padding: 10px 16px;
+      background: #0d9488;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-primary:hover:not(:disabled) { background: #0f766e; }
+    .btn-primary:disabled { background: #9ca3af; cursor: not-allowed; }
+    .status { padding: 8px 12px; border-radius: 6px; font-size: 12px; display: none; }
+    .status.success { background: #ecfdf5; color: #065f46; display: block; }
+    .status.error { background: #fef2f2; color: #991b1b; display: block; }
+    .status.loading { background: #eff6ff; color: #1e40af; display: block; }
+    .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 8px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .footer { padding: 12px 16px; border-top: 1px solid #e5e5e5; text-align: center; font-size: 11px; color: #9ca3af; background: #fafafa; }
+    .footer a { color: #0d9488; text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+    .loading-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255,255,255,0.9);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100; display: none;
+    }
+    .loading-overlay.active { display: flex; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+    </svg>
+    <h1>Save to Compendium</h1>
+  </div>
+
+  <div class="loading-overlay" id="loadingOverlay">
+    <div style="text-align: center; color: #0d9488;">
+      <div class="spinner"></div>
+      <div style="margin-top: 8px;">Loading...</div>
+    </div>
+  </div>
+
+  <div class="content" id="mainContent">
+    <div class="form-group">
+      <label>Destination</label>
+      <div class="nested-selects" id="destinationSelects">
+        <select id="domainSelect" disabled>
+          <option value="">Select a domain…</option>
+        </select>
+        <div class="select-row" id="folderRow" style="display:none;">
+          <select id="folderSelect" disabled>
+            <option value="">Select a folder…</option>
+          </select>
+        </div>
+        <select id="topicSelect" disabled>
+          <option value="">Select a topic…</option>
+        </select>
+        <select id="statementSelect" disabled>
+          <option value="">Select a statement…</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="titleInput">Title</label>
+      <input type="text" id="titleInput" placeholder="Page title">
+    </div>
+
+    <div class="form-group">
+      <label for="tagsInput">Tags <span class="optional">(optional)</span></label>
+      <input type="text" id="tagsInput" placeholder="tag1, tag2, tag3">
+      <div class="tags-hint">Comma-separated tags for organization</div>
+    </div>
+
+    <button type="button" class="btn-primary" id="saveBtn" disabled>
+      Save
+    </button>
+
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="footer">
+    <a href="http://localhost:10000" target="_blank">Open Compendium</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

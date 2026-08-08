@@ -6,7 +6,12 @@ import csv
 import io
 import re
 import uuid
+import hashlib
 from datetime import datetime
+from bs4 import BeautifulSoup
+import nh3
+import readability
+import requests
 
 # Marker string used to namespace Univer workbook data stored inside an
 # attachment's `content` column when a table has been edited in-browser rather
@@ -264,6 +269,12 @@ def init_db():
     if existing and 'richtext' not in existing[0]:
         _migrate_attachments_table(conn, cursor)
 
+    # Ensure `source_url` column exists on attachments (idempotent).
+    cursor.execute("PRAGMA table_info(attachments)")
+    has_source_url = any(row['name'] == 'source_url' for row in cursor.fetchall())
+    if not has_source_url:
+        _migrate_attachments_source_url(conn, cursor)
+
     # `position` drives manual ordering of statements within a topic and of
     # assets within a statement. Both are added lazily so existing databases get
     # a sensible default (0) and are renumbered by creation order on first use.
@@ -361,6 +372,49 @@ def _migrate_attachments_table(conn, cursor):
             cursor.execute('ALTER TABLE attachments_new RENAME TO attachments')
             # Scoped to the rebuilt table so unrelated pre-existing violations
             # elsewhere in the schema cannot abort startup.
+            violations = cursor.execute("PRAGMA foreign_key_check('attachments')").fetchall()
+            if violations:
+                raise sqlite3.IntegrityError(f'foreign key violations after migration: {violations}')
+            cursor.execute('COMMIT')
+        except Exception:
+            cursor.execute('ROLLBACK')
+            raise
+    finally:
+        cursor.execute('PRAGMA foreign_keys = ON')
+        conn.isolation_level = prior_isolation
+
+
+def _migrate_attachments_source_url(conn, cursor):
+    """Add `source_url` column to `attachments` via table rebuild.
+
+    Follows the same rebuild pattern as `_migrate_attachments_table` so that
+    the new column is added atomically and the migration is safely re-runnable.
+    """
+    conn.commit()
+    prior_isolation = conn.isolation_level
+    conn.isolation_level = None
+    cursor.execute('PRAGMA foreign_keys = OFF')
+    try:
+        cursor.execute('BEGIN IMMEDIATE')
+        try:
+            cursor.execute('DROP TABLE IF EXISTS attachments_new')
+            cursor.execute('''CREATE TABLE attachments_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                statement_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                type TEXT NOT NULL CHECK (type IN ('link', 'document', 'image', 'video', 'text', 'richtext', 'table')),
+                content TEXT NOT NULL,
+                filename TEXT,
+                source_url TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (statement_id) REFERENCES statements (id) ON DELETE CASCADE
+            )''')
+            cursor.execute('''
+                INSERT INTO attachments_new (id, statement_id, title, type, content, filename, created_at)
+                SELECT id, statement_id, title, type, content, filename, created_at FROM attachments
+            ''')
+            cursor.execute('DROP TABLE attachments')
+            cursor.execute('ALTER TABLE attachments_new RENAME TO attachments')
             violations = cursor.execute("PRAGMA foreign_key_check('attachments')").fetchall()
             if violations:
                 raise sqlite3.IntegrityError(f'foreign key violations after migration: {violations}')
@@ -1597,6 +1651,216 @@ def attachment_table(attachment_id):
     if rows is None:
         return jsonify({'supported': False, 'filename': row['filename'] or ''})
     return jsonify({'supported': True, 'rows': rows, 'filename': row['filename'] or ''})
+
+
+@app.route('/api/tree')
+def api_tree():
+    """Return the full domain→folder→topic→statement tree for the extension picker."""
+    conn = get_db()
+    domains = conn.execute('SELECT id, name, description FROM domains ORDER BY name').fetchall()
+    result = {'domains': []}
+    for d in domains:
+        domain_id = d['id']
+        # Folders for this domain
+        folders = conn.execute(
+            'SELECT id, parent_id, name, description FROM folders WHERE domain_id = ? ORDER BY name', (domain_id,)
+        ).fetchall()
+        folder_tree = build_folder_tree(conn, folders)
+        # Topics with no folder (loose topics)
+        loose_topics = conn.execute('''
+            SELECT t.id, t.name, t.description,
+                   COUNT(DISTINCT s.id) as statement_count
+            FROM topics t
+            LEFT JOIN statements s ON t.id = s.topic_id
+            WHERE t.domain_id = ? AND t.folder_id IS NULL
+            GROUP BY t.id
+            ORDER BY t.created_at DESC
+        ''', (domain_id,)).fetchall()
+        loose_topics_list = []
+        for t in loose_topics:
+            statements = conn.execute(
+                'SELECT id, text FROM statements WHERE topic_id = ? ORDER BY position ASC, created_at ASC', (t['id'],)
+            ).fetchall()
+            loose_topics_list.append({
+                'id': t['id'],
+                'name': t['name'],
+                'description': t['description'],
+                'statements': [{'id': s['id'], 'text': s['text']} for s in statements],
+            })
+        # Attach loose_topics to folder_tree root level
+        for node in folder_tree:
+            node['loose_topics'] = []
+        result['domains'].append({
+            'id': domain_id,
+            'name': d['name'],
+            'description': d['description'],
+            'folders': folder_tree,
+            'loose_topics': loose_topics_list,
+        })
+    conn.close()
+    return jsonify(result)
+
+
+# nh3 allowlist for CKEditor 5 compatibility
+CKEDITOR_TAGS = {
+    'p', 'br', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'strong', 'em', 'u', 's', 'code', 'pre', 'blockquote',
+    'ul', 'ol', 'li', 'a', 'img', 'hr', 'figure', 'figcaption',
+    'table', 'thead', 'tbody', 'tr', 'th', 'td',
+    'span', 'div',
+}
+CKEDITOR_ATTRS = {
+    '*': {'class', 'style', 'id'},
+    'a': {'href', 'target'},
+    'img': {'src', 'alt', 'width', 'height', 'loading'},
+    'th': {'scope', 'colspan', 'rowspan'},
+    'td': {'colspan', 'rowspan'},
+}
+
+SAFE_URL_SCHEMES = frozenset(('http', 'https', 'data'))
+
+
+def _sanitize_html(html):
+    """Sanitize HTML with nh3 using CKEditor-compatible allowlist."""
+    return nh3.clean(
+        html,
+        tags=CKEDITOR_TAGS,
+        attributes=CKEDITOR_ATTRS,
+        url_schemes=SAFE_URL_SCHEMES,
+    )
+
+
+def _fetch_and_save_image(url, session, upload_folder, seen_hashes, max_size=20 * 1024 * 1024, timeout=10):
+    """Fetch an image, validate, deduplicate by SHA256, save to uploads. Returns (local_path, filename) or (None, None)."""
+    try:
+        resp = session.get(url, timeout=timeout, headers={'Accept': 'image/*'}, stream=True)
+        if resp.status_code != 200:
+            return None, None
+        content_type = resp.headers.get('Content-Type', '').lower()
+        if not content_type.startswith('image/'):
+            return None, None
+        # Read with size limit
+        content = b''
+        for chunk in resp.iter_content(chunk_size=8192):
+            content += chunk
+            if len(content) > max_size:
+                return None, None
+        # Hash for deduplication
+        file_hash = hashlib.sha256(content).hexdigest()
+        if file_hash in seen_hashes:
+            return seen_hashes[file_hash], seen_hashes[file_hash]
+        # Determine extension from MIME type or URL
+        ext_map = {
+            'image/jpeg': 'jpg',
+            'image/png': 'png',
+            'image/gif': 'gif',
+            'image/webp': 'webp',
+            'image/bmp': 'bmp',
+            'image/avif': 'avif',
+        }
+        ext = ext_map.get(content_type)
+        if not ext:
+            # Fallback to URL extension
+            url_path = url.split('?')[0]
+            if '.' in url_path:
+                possible_ext = url_path.rsplit('.', 1)[1].lower()
+                if possible_ext in ('jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif'):
+                    ext = 'jpg' if possible_ext == 'jpeg' else possible_ext
+        if not ext:
+            ext = 'jpg'
+        filename = f"{uuid.uuid4().hex}.{ext}"
+        filepath = os.path.join(upload_folder, filename)
+        os.makedirs(upload_folder, exist_ok=True)
+        with open(filepath, 'wb') as f:
+            f.write(content)
+        seen_hashes[file_hash] = (f"/uploads/{filename}", filename)
+        return f"/uploads/{filename}", filename
+    except Exception:
+        return None, None
+
+
+def _rewrite_image_srcs(html, session, upload_folder, seen_hashes):
+    """Find all <img src="..."> in HTML, fetch/rehost each, rewrite src to local path."""
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, 'html.parser')
+    for img in soup.find_all('img'):
+        src = img.get('src')
+        if not src:
+            continue
+        # Skip data URIs and already-local uploads
+        if src.startswith('data:') or src.startswith('/uploads/'):
+            continue
+        # Make absolute if relative
+        if src.startswith('//'):
+            src = 'https:' + src
+        elif src.startswith('/'):
+            # We don't have the base URL here; skip relative paths
+            continue
+        local_path, filename = _fetch_and_save_image(src, session, upload_folder, seen_hashes)
+        if local_path:
+            img['src'] = local_path
+    return str(soup)
+
+
+@app.route('/api/capture', methods=['POST'])
+def api_capture():
+    """Capture a webpage: readability → sanitize → rehost images → save as richtext attachment."""
+    data = request.get_json(silent=True) or {}
+    statement_id = data.get('statement_id')
+    title = (data.get('title') or '').strip()
+    url = (data.get('url') or '').strip()
+    html = data.get('html') or ''
+    tags = (data.get('tags') or '').strip()
+
+    if not statement_id or not url or not html:
+        return jsonify({'ok': False, 'error': 'statement_id, url, and html are required'}), 400
+
+    # 1. Readability extraction
+    try:
+        doc = readability.Document(html)
+        article_html = doc.summary()
+        extracted_title = doc.title() or ''
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'Readability failed: {e}'}), 500
+
+    # 2. Sanitize article HTML
+    clean_html = _sanitize_html(article_html)
+
+    # 3. Image harvest & rehost
+    upload_folder = app.config['UPLOAD_FOLDER']
+    session = requests.Session()
+    seen_hashes = {}
+    final_html = _rewrite_image_srcs(clean_html, session, upload_folder, seen_hashes)
+
+    # 4. Compose richtext body
+    source_title = title or extracted_title or url
+    source_link = f'<p><strong>Source:</strong> <a href="{nh3.clean(url, tags=set(), attributes={}, url_schemes=SAFE_URL_SCHEMES)}">{nh3.clean(source_title, tags=set(), attributes={})}</a></p>'
+    # Excerpt: first paragraph or readability excerpt
+    excerpt_html = ''
+    soup_excerpt = BeautifulSoup(final_html, 'html.parser')
+    first_p = soup_excerpt.find('p')
+    if first_p and first_p.get_text(strip=True):
+        excerpt_html = f'<p>{first_p.get_text(strip=True)[:300]}</p>'
+    hr = '<hr>'
+    composed = f'{source_link}{excerpt_html}{hr}{final_html}'
+
+    # 5. Insert as richtext attachment with source_url
+    conn = get_db()
+    try:
+        conn.execute(
+            'INSERT INTO attachments (statement_id, title, type, content, filename, tags, source_url, position) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM attachments WHERE statement_id = ?))',
+            (statement_id, source_title, 'richtext', composed, None, tags, url, statement_id)
+        )
+        conn.commit()
+        attachment_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        return jsonify({'ok': False, 'error': 'Could not save attachment'}), 500
+    conn.close()
+
+    return jsonify({'ok': True, 'attachment_id': attachment_id})
 
 
 @app.route('/save_table/<int:attachment_id>', methods=['POST'])

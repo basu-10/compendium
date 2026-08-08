@@ -10,12 +10,36 @@
     --text-muted: #9ca3af;
     --accent: #111827;
     --accent-hover: #374151;
+    --accent-teal: #0d9488;
+    --accent-teal-hover: #0f766e;
+    --accent-teal-active: #115e59;
     --tag-bg: #f3f4f6;
     --tag-text: #374151;
     --danger: #ef4444;
     --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
     --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
     --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+    --font-ui: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --fs-body: 0.95rem;
+    --lh-body: 1.6;
+
+    /* CKEditor 5 variable aliases → map to Compendium palette */
+    --ck-color-base-foreground: var(--text-primary);
+    --ck-color-base-background: var(--bg-surface);
+    --ck-color-base-border: var(--border);
+    --ck-color-primary: var(--accent-teal);
+    --ck-color-primary-hover: var(--accent-teal-hover);
+    --ck-color-primary-active: var(--accent-teal-active);
+    --ck-color-focus-ring: var(--accent-teal);
+    --ck-color-toolbar-background: var(--bg-muted);
+    --ck-color-toolbar-border: var(--border);
+    --ck-color-dropdown-panel-background: var(--bg-surface);
+    --ck-color-dropdown-panel-border: var(--border);
+    --ck-color-heading-text: var(--text-primary);
+    --ck-color-link-default: var(--accent-teal);
+    --ck-color-table-border: var(--border);
+    --ck-color-table-selected-background: color-mix(in srgb, var(--accent-teal) 15%, transparent);
 }
 
 * {
@@ -2812,45 +2836,104 @@ body.theme-modern .topic .add-row {
 }
 
 /* ===========================================================================
-   Rich-text (Quill) + Spreadsheet (Univer) editors
+   Rich-text (CKEditor 5) + Spreadsheet (Univer) editors
    Both libraries ship fixed-colour stylesheets; these overrides retheme them
    from the active compendium palette so they look native under BOTH themes
    (legacy + modern). The blocks are scoped to body.theme-* so the two themes
    can resolve to different surfaces without global leakage.
    =========================================================================== */
 
-/* --- Quill (rich text) --- */
-.ql-toolbar.ql-snow,
-.ql-container.ql-snow {
-    border-color: var(--border);
+body.theme-legacy {
+    /* Legacy theme overrides for CKEditor 5 */
+    --ck-color-base-foreground: var(--text-primary);
+    --ck-color-base-background: var(--bg-surface);
+    --ck-color-base-border: var(--border);
+    --ck-color-primary: var(--accent-teal);
+    --ck-color-primary-hover: var(--accent-teal-hover);
+    --ck-color-primary-active: var(--accent-teal-active);
+    --ck-color-focus-ring: var(--accent-teal);
+    --ck-color-toolbar-background: var(--bg-muted);
+    --ck-color-toolbar-border: var(--border);
+    --ck-color-dropdown-panel-background: var(--bg-surface);
+    --ck-color-dropdown-panel-border: var(--border);
+    --ck-color-heading-text: var(--text-primary);
+    --ck-color-link-default: var(--accent-teal);
+    --ck-color-table-border: var(--border);
+    --ck-color-table-selected-background: color-mix(in srgb, var(--accent-teal) 15%, transparent);
 }
-.ql-toolbar.ql-snow {
-    border-radius: 8px 8px 0 0;
-    background: var(--bg-muted);
-}
-.ql-container.ql-snow {
-    border-radius: 0 0 8px 8px;
-    background: var(--bg-surface);
-    color: var(--text-primary);
-    font-family: inherit;
-    font-size: 0.95rem;
-}
-.ql-snow .ql-stroke { stroke: var(--text-secondary); }
-.ql-snow .ql-fill { fill: var(--text-secondary); }
-.ql-snow .ql-picker { color: var(--text-secondary); }
-.ql-snow.ql-toolbar button:hover .ql-stroke,
-.ql-snow.ql-toolbar button.ql-active .ql-stroke { stroke: var(--accent); }
-.ql-snow.ql-toolbar button:hover .ql-fill,
-.ql-snow.ql-toolbar button.ql-active .ql-fill { fill: var(--accent); }
-.ql-snow.ql-toolbar button:hover .ql-picker,
-.ql-snow.ql-toolbar button.ql-active .ql-picker { color: var(--accent); }
-.ql-snow .ql-picker-options { background: var(--bg-surface); }
-.ql-editor.ql-blank::before { color: var(--text-muted); font-style: normal; }
-.ql-editor { min-height: 160px; }
 
-/* A compact reader variant used inside expanded asset cards (no toolbar). */
-.richtext-reader .ql-container.ql-snow { border: none; background: transparent; }
-.richtext-reader .ql-editor { min-height: 0; padding: 0; }
+body.theme-modern {
+    /* Modern theme overrides for CKEditor 5 */
+    --ck-color-base-foreground: var(--text-primary);
+    --ck-color-base-background: var(--bg-surface);
+    --ck-color-base-border: var(--border);
+    --ck-color-primary: var(--accent-teal);
+    --ck-color-primary-hover: var(--accent-teal-hover);
+    --ck-color-primary-active: var(--accent-teal-active);
+    --ck-color-focus-ring: var(--accent-teal);
+    --ck-color-toolbar-background: var(--bg-muted);
+    --ck-color-toolbar-border: var(--border);
+    --ck-color-dropdown-panel-background: var(--bg-surface);
+    --ck-color-dropdown-panel-border: var(--border);
+    --ck-color-heading-text: var(--text-primary);
+    --ck-color-link-default: var(--accent-teal);
+    --ck-color-table-border: var(--border);
+    --ck-color-table-selected-background: color-mix(in srgb, var(--accent-teal) 15%, transparent);
+}
+
+/* CKEditor 5 editable area */
+.ck-editor__editable {
+    min-height: 120px;
+    max-height: 400px;
+    overflow-y: auto;
+    font-family: var(--font-ui);
+    font-size: var(--fs-body);
+    line-height: var(--lh-body);
+}
+
+.richtext-reader .ck-editor__editable {
+    max-height: none;  /* full content in read-only expand */
+    overflow-y: visible;
+}
+
+/* CKEditor 5 toolbar */
+.ck-toolbar {
+    border-radius: 8px 8px 0 0 !important;
+    background: var(--ck-color-toolbar-background) !important;
+    border-color: var(--ck-color-toolbar-border) !important;
+}
+
+.ck-toolbar-group > button:hover,
+.ck-toolbar-group > button.ck-on {
+    background: var(--ck-color-primary-hover) !important;
+    color: white !important;
+}
+
+.ck-toolbar-group > button:hover .ck-icon,
+.ck-toolbar-group > button.ck-on .ck-icon {
+    stroke: white !important;
+    fill: white !important;
+}
+
+.ck-toolbar-group > button .ck-icon {
+    stroke: var(--text-secondary);
+    fill: var(--text-secondary);
+}
+
+/* CKEditor 5 dropdown */
+.ck-dropdown__panel {
+    background: var(--ck-color-dropdown-panel-background) !important;
+    border-color: var(--ck-color-dropdown-panel-border) !important;
+}
+
+/* CKEditor 5 table */
+.ck-table {
+    border-color: var(--ck-color-table-border) !important;
+}
+
+.ck-table-selected-cell {
+    background: var(--ck-color-table-selected-background) !important;
+}
 
 /* --- Univer (spreadsheet) --- */
 /* Univer reads these --univer-* custom properties when present; we map them

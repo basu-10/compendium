@@ -719,25 +719,26 @@ function populateEditForm(attachmentId) {
             if (content && full.content != null) content.value = full.content;
             if (tags && full.tags != null) tags.value = full.tags;
 
-            // For rich text, swap the plain textarea for a Quill editor and keep
+            // For rich text, swap the plain textarea for a CKEditor 5 editor and keep
             // the underlying textarea as the field the form submits, syncing on
             // every change and on submit.
             if (full.type === 'richtext' && window.COMPENDIUM_EDITORS && content && content.tagName === 'TEXTAREA') {
-                // Guard: only build a Quill editor once per form load so
+                // Guard: only build a CKEditor editor once per form load so
                 // re-opening the same modal does not stack duplicate editors.
-                if (content.dataset.quillReady === '1') return;
-                content.dataset.quillReady = '1';
+                if (content.dataset.ckeditorReady === '1') return;
+                content.dataset.ckeditorReady = '1';
                 const wrapper = document.createElement('div');
                 content.parentNode.insertBefore(wrapper, content);
                 wrapper.appendChild(content);
                 content.style.display = 'none';
-                const q = COMPENDIUM_EDITORS.renderRichText(wrapper, full.content || '', false);
-                if (q) {
-                    q.on('text-change', function () {
-                        content.value = q.root.innerHTML;
+                const result = COMPENDIUM_EDITORS.renderRichText(wrapper, full.content || '', false);
+                if (result && result.getData) {
+                    // CKEditor 5: listen for data changes
+                    result.editor.model.document.on('change:data', function () {
+                        content.value = result.getData();
                     });
                     form.addEventListener('submit', function () {
-                        content.value = q.root.innerHTML;
+                        content.value = result.getData();
                     });
                 }
             }

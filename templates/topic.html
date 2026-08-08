@@ -90,6 +90,7 @@
                         {% set delete_message = 'Are you sure you want to delete this statement and its attachments?' %}
                         {% set attach_modal_id = attach_modal_id %}
                         {% set attach_url = url_for('create_attachment') %}
+                        {% set duplicate_url = url_for('duplicate_statement', statement_id=statement.id) %}
                         {% include "components/hover_actions.html" with context %}
 
                         {% set summary = evidence_summary(attachments_by_statement.get(statement.id)) %}
@@ -260,5 +261,6 @@ document.addEventListener('DOMContentLoaded', function() {
             activeRow.scrollIntoView({ block: 'nearest' });
         }
     }
+});
 </script>
 {% endblock %}

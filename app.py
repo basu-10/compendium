@@ -1873,6 +1873,79 @@ def duplicate_topic(topic_id):
     return redirect(url_for('domain', domain_id=domain_id))
 
 
+@app.route('/duplicate_statement/<int:statement_id>', methods=['POST'])
+def duplicate_statement(statement_id):
+    conn = get_db()
+    stmt = conn.execute('SELECT * FROM statements WHERE id = ?', (statement_id,)).fetchone()
+    if not stmt:
+        conn.close()
+        flash('Statement not found')
+        return redirect(request.referrer or url_for('all_domains'))
+    topic_id = stmt['topic_id']
+    # Keep the duplicate in the same topic, appended at the end of the list.
+    max_pos = conn.execute(
+        'SELECT MAX(position) AS m FROM statements WHERE topic_id = ?', (topic_id,)
+    ).fetchone()['m']
+    next_pos = (max_pos or 0) + 1
+    try:
+        cursor = conn.execute(
+            "INSERT INTO statements (topic_id, text, position) VALUES (?, 'Copy of ' || ?, ?)",
+            (topic_id, stmt['text'], next_pos),
+        )
+        new_statement_id = cursor.lastrowid
+        src_attachments = conn.execute(
+            'SELECT * FROM attachments WHERE statement_id = ? ORDER BY position ASC, created_at DESC',
+            (statement_id,),
+        ).fetchall()
+        for src_att in src_attachments:
+            _copy_attachment(conn, src_att, new_statement_id)
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        flash('Could not duplicate this statement')
+        return redirect_to_topic_referrer(topic_id, statement_id)
+    conn.close()
+    return redirect_to_topic_referrer(topic_id, new_statement_id)
+
+
+@app.route('/duplicate_attachment/<int:attachment_id>', methods=['POST'])
+def duplicate_attachment(attachment_id):
+    conn = get_db()
+    att = conn.execute('SELECT * FROM attachments WHERE id = ?', (attachment_id,)).fetchone()
+    if not att:
+        conn.close()
+        flash('Asset not found')
+        return redirect(request.referrer or url_for('all_domains'))
+    statement_id = att['statement_id']
+    topic = conn.execute(
+        'SELECT topic_id FROM statements WHERE id = ?', (statement_id,)
+    ).fetchone()
+    topic_id = topic['topic_id'] if topic else None
+    # Keep the duplicate under the same statement, appended at the end.
+    max_pos = conn.execute(
+        'SELECT MAX(position) AS m FROM attachments WHERE statement_id = ?',
+        (statement_id,),
+    ).fetchone()['m']
+    next_pos = (max_pos or 0) + 1
+    try:
+        # _copy_attachment reuses the source position; override it afterwards so
+        # the copy lands at the end of the same statement's asset list.
+        new_att_id = _copy_attachment(conn, att, statement_id)
+        conn.execute(
+            'UPDATE attachments SET position = ? WHERE id = ?',
+            (next_pos, new_att_id),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        flash('Could not duplicate this asset')
+        return redirect_to_topic_referrer(topic_id, statement_id)
+    conn.close()
+    return redirect_to_topic_referrer(topic_id, statement_id)
+
+
 @app.route('/duplicate_folder/<int:folder_id>', methods=['POST'])
 def duplicate_folder(folder_id):
     conn = get_db()

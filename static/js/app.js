@@ -578,6 +578,22 @@ function renderEvidenceCard(att) {
     });
     actions.appendChild(deleteBtn);
 
+    const dupBtn = document.createElement('button');
+    dupBtn.type = 'button';
+    dupBtn.className = 'icon-btn duplicate-btn';
+    dupBtn.title = 'Duplicate';
+    dupBtn.setAttribute('aria-label', 'Duplicate');
+    dupBtn.textContent = '\u29C9';
+    dupBtn.addEventListener('click', function(event) {
+        event.stopPropagation();
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/duplicate_attachment/' + att.id;
+        document.body.appendChild(form);
+        form.submit();
+    });
+    actions.appendChild(dupBtn);
+
     const collapseBtn = document.createElement('button');
     collapseBtn.type = 'button';
     collapseBtn.className = 'icon-btn collapse-btn';

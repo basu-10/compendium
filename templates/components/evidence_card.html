@@ -26,6 +26,7 @@
         {% set delete_url = url_for('delete_attachment', attachment_id=att.id) %}
         {% set delete_title = 'Delete Asset' %}
         {% set delete_message = 'Are you sure you want to delete this asset?' %}
+        {% set duplicate_url = url_for('duplicate_attachment', attachment_id=att.id) %}
         {% set attach_url = none %}
         {% include "components/hover_actions.html" with context %}
         <button type="button" class="icon-btn collapse-btn" title="Restore size" aria-label="Restore size" onclick="collapseEvidenceCard(this.closest('.evidence-card')); event.stopPropagation();">&#9650;</button>

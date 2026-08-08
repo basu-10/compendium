@@ -60,9 +60,13 @@
             {# The statement list and the "add" affordance share one scroll
                container so the add row can sit at the end of the list while
                staying pinned above the fold once the list outgrows the pane. #}
-            <div class="pane-body">
-                <div class="statement-list" id="statement-list">
-                    {% for statement in statements %}
+                <div class="pane-body">
+                    <div class="statement-list" id="statement-list">
+                        {# The trailing "add statement" tile is built by JS (see
+                           buildAddStatementTile) so it flows inline with the
+                           statement rows and resizes with them, matching the
+                           behaviour of the add-asset tile in the evidence grid. #}
+                        {% for statement in statements %}
                     {% set stmt_edit_modal_id = 'edit-statement-' ~ statement.id %}
                     {% set stmt_delete_modal_id = 'delete-statement-' ~ statement.id %}
                     {% set attach_modal_id = 'attach-' ~ statement.id %}
@@ -92,16 +96,12 @@
                         {% include "components/evidence_summary.html" with context %}
                     </div>
                     {% endfor %}
-                </div>
 
-                {# Sized and shaped like a statement row, but dashed/muted so it
-                   reads as the next empty slot rather than a page-level button.
-                   Sticky so it stays reachable as the list grows. #}
-                <button type="button" class="add-row" id="add-statement-row"
-                        onclick="openModal('add-statement-{{ topic.id }}')">
-                    <span class="add-row-plus" aria-hidden="true">+</span>
-                    <span class="add-row-label">New statement</span>
-                </button>
+                    {# Trailing tile built by JS (buildAddStatementTile) so it
+                       flows inline with the statement rows, sized and shaped
+                       like the add-asset tile in the evidence grid. #}
+                    <div id="add-statement-slot"></div>
+                </div>
             </div>
         </div>
 

@@ -174,6 +174,40 @@ function initStatements() {
             edit: function() { editStatement(row); },
         });
     });
+    // The "Add Statement" tile flows inline at the end of the list, sized and
+    // styled like the add-asset tile in the evidence grid, so the two panes
+    // stay visually consistent and the button resizes with the rows.
+    buildAddStatementTile();
+}
+
+// Trailing placeholder that opens the add-statement modal. Rebuilt client-side
+// (rather than server-rendered) so it can be re-appended after the list changes
+// and always sits flush with the last statement, like buildAddEvidenceCard.
+function buildAddStatementTile() {
+    const slot = document.getElementById('add-statement-slot');
+    if (!slot) return;
+    slot.innerHTML = '';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'add-row';
+    btn.id = 'add-statement-row';
+    btn.addEventListener('click', function() {
+        openModal('add-statement-' + window.location.pathname.split('/').filter(Boolean).pop());
+    });
+
+    const plus = document.createElement('span');
+    plus.className = 'add-row-plus';
+    plus.setAttribute('aria-hidden', 'true');
+    plus.textContent = '+';
+    btn.appendChild(plus);
+
+    const label = document.createElement('span');
+    label.className = 'add-row-label';
+    label.textContent = 'Add Statement';
+    btn.appendChild(label);
+
+    slot.appendChild(btn);
 }
 
 // Statements grow vertically only: the full text is already in the DOM, so

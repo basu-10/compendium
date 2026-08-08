@@ -2356,6 +2356,58 @@ body.theme-modern .app-layout {
     /* TODO: theme 2 layout styles go here. */
 }
 
+/* Theme 2 (Modern) — topic-page-only top/bottom layout, scoped to
+ * body.theme-modern .topic so every other page keeps the legacy layout.
+ * Only CSS is added here; the legacy class hooks (.statement, .evidence-card,
+ * #evidence-content, #statement-list) are reused unchanged. */
+body.theme-modern .topic .split-layout {
+    flex-direction: column;
+    height: auto;
+    min-height: 0;
+    gap: 1.5rem;
+}
+
+body.theme-modern .topic .left-pane,
+body.theme-modern .topic .right-pane {
+    flex: none;
+    overflow: visible;
+}
+
+/* Top: a horizontal row of statement cards. */
+body.theme-modern .topic .statement-list {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: .75rem;
+}
+
+body.theme-modern .topic .statement {
+    flex: 1 1 240px;
+    margin-bottom: 0;
+    width: auto;
+}
+
+/* Bottom: a 12-column bento grid of assets. */
+body.theme-modern .topic .evidence-grid {
+    grid-template-columns: repeat(12, 1fr);
+}
+
+body.theme-modern .topic .evidence-card {
+    grid-column: span 4;
+}
+
+body.theme-modern .topic .evidence-card.expanded {
+    grid-column: 1 / -1;
+}
+
+/* Bento variety so the grid does not read as a uniform table. */
+body.theme-modern .topic .evidence-card:nth-child(3n+1) {
+    grid-column: span 6;
+}
+
+body.theme-modern .topic .add-card {
+    grid-column: span 4;
+}
+
 /* Settings modal: layout/theme picker */
 .settings-modal {
     max-width: 420px;

@@ -24,8 +24,8 @@
         {% set edit_url = url_for('update_attachment') %}
         {% set delete_modal_id = 'delete-attachment' %}
         {% set delete_url = url_for('delete_attachment', attachment_id=att.id) %}
-        {% set delete_title = 'Delete Evidence' %}
-        {% set delete_message = 'Are you sure you want to delete this evidence asset?' %}
+        {% set delete_title = 'Delete Asset' %}
+        {% set delete_message = 'Are you sure you want to delete this asset?' %}
         {% set delete_gated = true %}
         {% set attach_url = none %}
         {% include "components/hover_actions.html" with context %}

@@ -3,7 +3,7 @@
 <form id="edit-attachment-form-{{ attachment.id }}" class="add-form" method="POST"
       action="{{ url_for('update_attachment') }}" enctype="multipart/form-data">
     <input type="hidden" name="attachment_id" value="{{ attachment.id }}">
-    <h3 id="{{ modal_id }}-title">Edit Evidence</h3>
+    <h3 id="{{ modal_id }}-title">Edit Asset</h3>
 
     <div class="form-group">
         <label for="edit-att-title-{{ attachment.id }}">Title</label>

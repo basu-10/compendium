@@ -616,8 +616,7 @@ function showEvidence(statementId) {
     // reorderable after the cards are rebuilt client-side.
     const titleEl = document.getElementById('evidence-pane-title');
     if (titleEl) {
-        const stmt = document.querySelector('.statement[data-statement-id="' + statementId + '"]');
-        titleEl.textContent = 'Assets for ' + (stmt ? stmt.textContent.trim() : 'this topic');
+        titleEl.textContent = 'Assets';
     }
     initAssetSortable(statementId);
 }
@@ -636,7 +635,7 @@ function buildAddEvidenceCard(statementId, isEmpty) {
 
     const label = document.createElement('span');
     label.className = 'add-card-label';
-    label.textContent = isEmpty ? 'Add the first piece of evidence' : 'Add evidence';
+    label.textContent = isEmpty ? 'Add the first asset' : 'Add asset';
     btn.appendChild(label);
 
     btn.addEventListener('click', function() {

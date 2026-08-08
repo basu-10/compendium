@@ -8,6 +8,21 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script>
+        // Apply the stored theme before first paint to avoid a flash of the
+        // default layout and a reload-loss of the selection.
+        (function() {
+            var theme = localStorage.getItem('compendium-theme') || 'legacy';
+            document.documentElement.classList.add('theme-' + theme);
+            if (document.body) {
+                document.body.className = 'theme-' + theme;
+            } else {
+                document.addEventListener('DOMContentLoaded', function() {
+                    document.body.className = 'theme-' + theme;
+                });
+            }
+        })();
+    </script>
     {% block head %}{% endblock %}
 </head>
 <body class="theme-legacy">
@@ -16,7 +31,7 @@
             <div class="sidebar-header">
                 <a href="{{ url_for('index') }}" class="sidebar-brand-link">
                     <div class="sidebar-brand">Compendium</div>
-                    <div class="sidebar-subtitle">Evidence Mapping</div>
+                    <div class="sidebar-subtitle">Asset Mapping</div>
                 </a>
             </div>
             <nav class="sidebar-nav">
@@ -54,7 +69,7 @@
                 <div class="top-actions">
                     <div class="search-box">
                         <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
-                        <input type="text" placeholder="Search evidence...">
+                        <input type="text" placeholder="Search assets...">
                     </div>
                     <button class="icon-btn" title="Notifications">&#128276;</button>
                     <button class="icon-btn" id="settings-btn" title="Settings" aria-label="Settings">&#9881;</button>
@@ -109,7 +124,7 @@
                         <input type="radio" name="theme" id="theme-modern" value="modern">
                         <label for="theme-modern">
                             <span class="theme-option-name">Modern</span>
-                            <span class="theme-option-desc">Coming soon.</span>
+                            <span class="theme-option-desc">Topic page: statement cards on top, bento assets below.</span>
                         </label>
                     </div>
                 </fieldset>
@@ -123,8 +138,8 @@
 
     <script>
         // Wire the settings gear to open the layout/theme modal. The selected
-        // theme is a no-op selector until "modern" is implemented; legacy stays
-        // the live layout. Choosing modern only surfaces a not-implemented alert.
+        // theme persists to localStorage and is applied on save; the page reloads
+        // so the chosen layout (legacy or modern) is rendered consistently.
         (function() {
             const STORAGE_KEY = 'compendium-theme';
             const body = document.body;
@@ -151,16 +166,11 @@
                 saveBtn.addEventListener('click', function() {
                     const selected = document.querySelector('#settings-modal input[name="theme"]:checked');
                     const theme = selected ? selected.value : 'legacy';
-                    if (theme === 'modern') {
-                        // Theme 2 is scaffolded but not yet built out.
-                        alert('Modern theme is not implemented yet.');
-                        closeModal('settings-modal');
-                        return;
-                    }
                     localStorage.setItem(STORAGE_KEY, theme);
                     body.classList.remove('theme-legacy', 'theme-modern');
                     body.classList.add('theme-' + theme);
                     closeModal('settings-modal');
+                    location.reload();
                 });
             }
         })();

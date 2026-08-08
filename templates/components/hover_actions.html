@@ -11,6 +11,6 @@
     <button type="button" class="icon-btn delete-btn{% if delete_gated %} gated{% endif %}" onclick="openConfirmModal('{{ delete_modal_id }}', '{{ delete_title }}', '{{ delete_message }}', '{{ delete_url }}'); event.stopPropagation();" title="Delete" aria-label="Delete">🗑</button>
     {% endif %}
     {% if attach_url %}
-    <button type="button" class="icon-btn" onclick="openModal('{{ attach_modal_id }}'); event.stopPropagation();" title="Attach Evidence" aria-label="Attach Evidence">📎</button>
+    <button type="button" class="icon-btn" onclick="openModal('{{ attach_modal_id }}'); event.stopPropagation();" title="Attach Asset" aria-label="Attach Asset">📎</button>
     {% endif %}
 </div>

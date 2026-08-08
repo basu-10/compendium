@@ -3,7 +3,7 @@
 {% block title %}{{ topic.name }} - Compendium{% endblock %}
 
 {% block content %}
-<div>
+<div class="topic">
     {% set topic_edit_modal_id = 'edit-topic-' ~ topic.id %}
     {% set topic_delete_modal_id = 'delete-topic-' ~ topic.id %}
     <div class="section-header topic-header" id="topic-header">
@@ -27,7 +27,7 @@
     <div class="split-layout" id="split-layout">
         <div class="left-pane" id="claims-pane">
             <div class="pane-header">
-                <h3>Claims &amp; Statements</h3>
+                <h3>Statements</h3>
             </div>
             {# The statement list and the "add" affordance share one scroll
                container so the add row can sit at the end of the list while
@@ -81,7 +81,7 @@
 
         <div class="right-pane" id="evidence-pane">
             <div class="pane-header">
-                <h3 id="evidence-pane-title">Assets for {{ statements[0].text if statements else 'this topic' }}</h3>
+                <h3 id="evidence-pane-title">Assets</h3>
             </div>
             <div class="evidence-grid" id="evidence-content">
                 {% if statements %}
@@ -98,12 +98,12 @@
                             onclick="openAttachModal(this.dataset.statementId)">
                         <span class="add-card-plus" aria-hidden="true">+</span>
                         <span class="add-card-label">
-                            {% if attachments_by_statement.get(first_id) %}Add evidence{% else %}Add the first piece of evidence{% endif %}
+                            {% if attachments_by_statement.get(first_id) %}Add asset{% else %}Add the first asset{% endif %}
                         </span>
                     </button>
                 {% else %}
                     <div class="empty-state">
-                        <p>Add a statement first, then attach evidence to it.</p>
+                        <p>Add a statement first, then attach an asset to it.</p>
                     </div>
                 {% endif %}
             </div>
@@ -145,8 +145,8 @@
        the action URL and message when an attachment's delete button is tapped,
        instead of rendering one modal per attachment. #}
     {% set modal_id = 'delete-attachment' %}
-    {% set title = 'Delete Evidence' %}
-    {% set message = 'Are you sure you want to delete this evidence asset?' %}
+    {% set title = 'Delete Asset' %}
+    {% set message = 'Are you sure you want to delete this asset?' %}
     {% set delete_url = '' %}
     {% include "modals/confirm_delete.html" with context %}
 
@@ -178,7 +178,12 @@ const CONTENT_ONLY_TYPES = {{ CONTENT_ONLY_TYPES | tojson }};
 
 // Split.js initialization
 document.addEventListener('DOMContentLoaded', function() {
-    if (typeof Split !== 'undefined') {
+    // Under the Modern theme the topic page uses a top/bottom layout (no split
+    // panes), so skip Split.js — its injected inline width/flex would fight the
+    // Modern CSS. Same for the mobile accordion, which assumes two panes.
+    const isModern = document.body.classList.contains('theme-modern');
+
+    if (!isModern && typeof Split !== 'undefined') {
         const split = Split(['#claims-pane', '#evidence-pane'], {
             direction: 'horizontal',
             sizes: [50, 50],
@@ -199,7 +204,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initHoverActions();
     initEvidenceCards();
     initStatements();
-    initMobileAccordion();
+    if (!isModern) initMobileAccordion();
     initDragReorder();
     initAssetDropzone();
 });

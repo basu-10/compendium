@@ -2,7 +2,7 @@
 {% block modal_content %}
 <form id="attach-form-{{ statement_id }}" class="add-form" method="POST" action="{{ url_for('create_attachment') }}" enctype="multipart/form-data">
     <input type="hidden" name="statement_id" value="{{ statement_id }}">
-    <h3 id="{{ modal_id }}-title">{{ title or 'Attach Evidence' }}</h3>
+    <h3 id="{{ modal_id }}-title">{{ title or 'Attach Asset' }}</h3>
     <div class="form-group">
         <label for="att-title-{{ statement_id }}">Title</label>
         <input type="text" id="att-title-{{ statement_id }}" name="title" required>

@@ -149,7 +149,6 @@
     {% set current_folder_id = '' %}
     {% include "modals/add_topic.html" with context %}
 
-    {% if folder_tree or loose_topics %}
     <div class="grid folders-section">
         {% for node in folder_tree %}
             {{ render_folder(node, 0) }}
@@ -196,6 +195,12 @@
         </div>
         {% endfor %}
 
+        {% if not folder_tree and not loose_topics %}
+        <div class="empty-state">
+            <p>No folders or topics yet. Create a folder to start grouping topics, or add a topic directly.</p>
+        </div>
+        {% endif %}
+
         <button type="button" class="card card-new" onclick="openModal('{{ add_topic_modal_id }}')"
                 aria-haspopup="dialog" aria-label="Create a new topic in this domain">
             <span class="card-new-icon" aria-hidden="true">+</span>
@@ -214,10 +219,5 @@
             </span>
         </button>
     </div>
-    {% else %}
-    <div class="empty-state">
-        <p>No folders or topics yet. Create a folder to start grouping topics, or add a topic directly.</p>
-    </div>
-    {% endif %}
 </div>
 {% endblock %}

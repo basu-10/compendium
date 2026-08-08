@@ -70,7 +70,7 @@
                     {% set stmt_edit_modal_id = 'edit-statement-' ~ statement.id %}
                     {% set stmt_delete_modal_id = 'delete-statement-' ~ statement.id %}
                     {% set attach_modal_id = 'attach-' ~ statement.id %}
-                    <div class="statement {% if loop.first %}active-statement{% endif %}"
+                    <div class="statement {% if statement.id == active_statement_id %}active-statement{% endif %}"
                          data-statement-id="{{ statement.id }}"
                          data-edit-modal="{{ stmt_edit_modal_id }}"
                          tabindex="0"
@@ -116,7 +116,7 @@
             </div>
             <div class="evidence-grid" id="evidence-content">
                 {% if statements %}
-                    {% set first_id = statements[0].id %}
+                    {% set first_id = active_statement_id or statements[0].id %}
                     {% for att in attachments_by_statement.get(first_id, []) %}
                         {% include "components/evidence_card.html" with context %}
                     {% endfor %}
@@ -211,6 +211,10 @@ const evidenceData = JSON.parse(document.getElementById('evidence-data').textCon
 // Authoritative list mirrored from CONTENT_ONLY_TYPES in app.py. Single source
 // of truth so client form logic cannot drift from server validation.
 const CONTENT_ONLY_TYPES = {{ CONTENT_ONLY_TYPES | tojson }};
+// The statement the evidence pane should show on load. Set by the server when
+// a reload (e.g. after adding an asset) needs to stay on the working row
+// instead of snapping back to the first statement. Empty when none selected.
+const ACTIVE_STATEMENT_ID = {{ (active_statement_id | string) if active_statement_id is not none else 'null' }};
 
 // Split.js initialization
 document.addEventListener('DOMContentLoaded', function() {
@@ -244,6 +248,17 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!isModern) initMobileAccordion();
     initDragReorder();
     initAssetDropzone();
-});
+
+    // Restore the statement the user was working on across a page reload (e.g.
+    // after adding an asset). Without this the first statement is reselected.
+    if (ACTIVE_STATEMENT_ID !== null) {
+        const activeRow = document.querySelector(
+            '.statement[data-statement-id="' + ACTIVE_STATEMENT_ID + '"]'
+        );
+        if (activeRow) {
+            showEvidence(ACTIVE_STATEMENT_ID);
+            activeRow.scrollIntoView({ block: 'nearest' });
+        }
+    }
 </script>
 {% endblock %}

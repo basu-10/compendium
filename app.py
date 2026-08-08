@@ -155,6 +155,26 @@ def get_db():
     conn.execute('PRAGMA foreign_keys = ON')
     return conn
 
+def redirect_to_topic_referrer(topic_id, statement_id=None):
+    """Redirect back to the topic page, preserving the selected statement.
+
+    Asset/statement mutations reload the page; without this the first statement
+    is reselected. We stash the active statement id in the URL so the topic
+    template can re-highlight and scroll to the row the user was working in.
+    """
+    from urllib.parse import urlparse, parse_qsl, urlencode
+    referrer = request.referrer or url_for('topic', topic_id=topic_id)
+    parts = urlparse(referrer)
+    params = dict(parse_qsl(parts.query))
+    if statement_id:
+        params['stmt'] = str(statement_id)
+    else:
+        params.pop('stmt', None)
+    query = urlencode(params)
+    target = parts._replace(query=query)
+    return redirect(target.geturl())
+
+
 def _ensure_column(conn, cursor, table, column, definition):
     """Add `column` to `table` only if SQLite doesn't already have it.
 
@@ -687,6 +707,18 @@ def topic(topic_id):
     attachments_by_statement = {}
     for att in attachments:
         attachments_by_statement.setdefault(att['statement_id'], []).append(att)
+
+    # Which statement the evidence pane should show on load. Driven by ?stmt=
+    # so a reload after editing/adding an asset stays on the row the user was
+    # working in, instead of snapping back to the first statement.
+    raw_stmt = request.args.get('stmt')
+    active_statement_id = None
+    if raw_stmt and raw_stmt.isdigit():
+        sid = int(raw_stmt)
+        if any(s['id'] == sid for s in statements):
+            active_statement_id = sid
+    if active_statement_id is None and statements:
+        active_statement_id = statements[0]['id']
     # Plain-dict version, keyed by string id, for JSON injection into the page so
     # the right-hand evidence pane can re-render on statement click. For text
     # kinds (link/richtext) the full body is large, so only the preview ships;
@@ -725,6 +757,7 @@ def topic(topic_id):
         preview_text=preview_text,
         CONTENT_ONLY_TYPES=CONTENT_ONLY_TYPES,
         q=q,
+        active_statement_id=active_statement_id,
     )
 
 @app.route('/create_topic', methods=['POST'])
@@ -929,13 +962,16 @@ def create_attachment():
             (statement_id, title, att_type, content, filename, statement_id)
         )
         conn.commit()
+        topic_row = conn.execute(
+            'SELECT topic_id FROM statements WHERE id = ?', (statement_id,)
+        ).fetchone()
     except sqlite3.IntegrityError:
         conn.rollback()
         conn.close()
         flash('Could not save this attachment')
         return redirect(request.referrer or url_for('all_domains'))
     conn.close()
-    return redirect(request.referrer or url_for('all_domains'))
+    return redirect_to_topic_referrer(topic_row['topic_id'] if topic_row else None, statement_id)
 
 def _infer_type_from_filename(filename):
     """Best-effort asset type from a dropped file's extension.
@@ -1105,12 +1141,27 @@ def delete_statement(statement_id):
         'SELECT filename FROM attachments WHERE statement_id = ? AND filename IS NOT NULL',
         (statement_id,)
     ).fetchall()
+    topics = conn.execute(
+        'SELECT id, topic_id FROM statements WHERE topic_id = (SELECT topic_id FROM statements WHERE id = ?) ORDER BY position ASC, created_at ASC',
+        (statement_id,)
+    ).fetchall()
     conn.execute('DELETE FROM statements WHERE id = ?', (statement_id,))
     conn.commit()
+    topic_id = topics[0]['topic_id'] if topics else None
+    # Keep the user on the next sibling statement, falling back to the first
+    # remaining one so the view doesn't jump back to the top of the list.
+    next_stmt = None
+    for t in topics:
+        if t['id'] == statement_id:
+            continue
+        next_stmt = t['id']
+        break
+    if next_stmt is None and len(topics) > 1:
+        next_stmt = topics[0]['id']
     conn.close()
     for row in rows:
         _remove_upload(row['filename'])
-    return redirect(request.referrer or url_for('all_domains'))
+    return redirect_to_topic_referrer(topic_id, next_stmt)
 
 @app.route('/update_attachment', methods=['POST'])
 def update_attachment():
@@ -1189,19 +1240,32 @@ def update_attachment():
     if old_filename and old_filename != filename:
         _remove_upload(old_filename)
 
-    return redirect(request.referrer or url_for('all_domains'))
+    topic_row = None
+    if existing:
+        tconn = get_db()
+        topic_row = tconn.execute(
+            'SELECT topic_id FROM statements WHERE id = ?', (existing['statement_id'],)
+        ).fetchone()
+        tconn.close()
+    return redirect_to_topic_referrer(topic_row['topic_id'] if topic_row else None, existing['statement_id'] if existing else None)
 
 
 @app.route('/delete_attachment/<int:attachment_id>', methods=['POST'])
 def delete_attachment(attachment_id):
     conn = get_db()
-    row = conn.execute('SELECT filename FROM attachments WHERE id = ?', (attachment_id,)).fetchone()
+    row = conn.execute(
+        'SELECT filename, statement_id FROM attachments WHERE id = ?', (attachment_id,)
+    ).fetchone()
+    statement_id = row['statement_id'] if row else None
     conn.execute('DELETE FROM attachments WHERE id = ?', (attachment_id,))
     conn.commit()
+    topic_row = conn.execute(
+        'SELECT topic_id FROM statements WHERE id = ?', (statement_id,)
+    ).fetchone() if statement_id else None
     conn.close()
     if row and row['filename']:
         _remove_upload(row['filename'])
-    return redirect(request.referrer or url_for('all_domains'))
+    return redirect_to_topic_referrer(topic_row['topic_id'] if topic_row else None, statement_id)
 
 
 @app.route('/attachment/<int:attachment_id>')

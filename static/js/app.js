@@ -8,11 +8,14 @@ function initPaneSearch() {
     let timer = null;
     function submit() {
         const value = input.value.trim();
+        const params = new URLSearchParams(window.location.search);
         if (value) {
-            window.location.search = '?q=' + encodeURIComponent(value);
+            params.set('q', value);
         } else {
-            window.location.search = '';
+            params.delete('q');
         }
+        const qs = params.toString();
+        window.location.search = qs ? '?' + qs : '';
     }
     input.addEventListener('input', function() {
         clearTimeout(timer);
@@ -719,6 +722,18 @@ let currentStatementId = null;
 function showEvidence(statementId) {
     highlightEvidence(statementId);
     currentStatementId = statementId;
+    // Reflect the selected statement in the URL so a manual refresh (and the
+    // server-driven reloads after asset edits) stay on this row.
+    try {
+        const params = new URLSearchParams(window.location.search);
+        if (statementId) {
+            params.set('stmt', String(statementId));
+        } else {
+            params.delete('stmt');
+        }
+        const qs = params.toString();
+        history.replaceState(null, '', qs ? window.location.pathname + '?' + qs : window.location.pathname);
+    } catch (e) {}
     const container = document.getElementById('evidence-content');
     if (!container || typeof evidenceData === 'undefined') return;
 

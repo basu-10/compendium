@@ -1070,6 +1070,31 @@ p {
     gap: 1rem;
 }
 
+/* Icon-only back button: returns to the domain the topic belongs to. Sized and
+   coloured to match the theme's icon buttons; no text label. */
+.back-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    margin-top: 0.15rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background-color: var(--bg-surface);
+    color: var(--text-secondary);
+    text-decoration: none;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s, background-color 0.2s;
+}
+
+.back-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+    background-color: var(--bg-muted);
+}
+
 /* Buttons & Forms */
 .filters {
     margin-bottom: 1.5rem;
@@ -2526,6 +2551,9 @@ body.theme-modern .topic .statement-list {
 
 body.theme-modern .topic .statement {
     flex: 1 1 260px;
+    /* Cap each card so a handful of statements don't stretch edge-to-edge and
+       become oversized; they sit at their natural width and wrap when needed. */
+    max-width: 320px;
     border-left: none;
     border-top: 3px solid var(--border);
     border-radius: 12px;
@@ -2829,3 +2857,95 @@ body.theme-modern { --plyr-color-main: #4f46e5; }
 }
 .asset-editor-status.saved { color: #16a34a; }
 .asset-editor-status.error { color: var(--danger); }
+
+/* --- Folder tree (domain page) ---
+   Folders are nested recursively; each card mirrors the topic grid card's
+   surface so the two reading contexts feel like one system. Nesting uses a
+   left margin applied inline (depth * step) so depth doesn't depend on CSS. */
+.folders-section {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.25rem;
+    margin-top: 1.5rem;
+}
+
+.folder-card {
+    grid-column: 1 / -1;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.folder-header {
+    margin-bottom: 0.5rem;
+}
+
+.folder-header h2 {
+    margin-bottom: 0;
+    font-size: 1.35rem;
+}
+
+.folder-glyph {
+    font-size: 1.25rem;
+    margin-right: 0.4rem;
+}
+
+.folder-desc {
+    margin-top: 0.25rem;
+    font-size: 0.9rem;
+}
+
+.folder-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.folder-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.btn-link {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 0;
+}
+
+.btn-link:hover {
+    text-decoration: underline;
+}
+
+.folder-contents {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+    margin-top: 0.5rem;
+}
+
+/* Topics sitting inside a folder reuse the card surface. They flow in the
+   folder's inner grid alongside any sub-folder cards. */
+.card-in-folder {
+    margin-top: 0;
+}
+
+/* Sub-folders nested inside a folder's contents tile in the inner grid
+   (instead of spanning the full width like the top-level folder card). */
+.folder-contents .folder-card {
+    grid-column: auto;
+}
+
+.empty-state {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    padding: 1rem 0;
+}

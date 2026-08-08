@@ -2,6 +2,7 @@
 {% block modal_content %}
 <form id="add-topic-form" class="add-form" method="POST" action="{{ url_for('create_topic') }}">
     <input type="hidden" name="domain_id" value="{{ domain.id }}">
+    <input type="hidden" name="folder_id" value="{{ current_folder_id or '' }}">
     <h3 id="{{ modal_id }}-title">Add New Topic</h3>
     <div class="form-group">
         <label for="topic-name">Topic Name</label>

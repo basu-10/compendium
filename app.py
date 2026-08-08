@@ -224,6 +224,17 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (statement_id) REFERENCES statements (id) ON DELETE CASCADE
         );
+
+        CREATE TABLE IF NOT EXISTS folders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            domain_id INTEGER NOT NULL,
+            parent_id INTEGER,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (domain_id) REFERENCES domains (id) ON DELETE CASCADE,
+            FOREIGN KEY (parent_id) REFERENCES folders (id) ON DELETE CASCADE
+        );
     ''')
     
     cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='attachments'")
@@ -238,7 +249,13 @@ def init_db():
     _ensure_column(conn, cursor, 'attachments', 'position', 'INTEGER DEFAULT 0')
     _backfill_positions(conn, cursor, 'statements', 'topic_id')
     _backfill_positions(conn, cursor, 'attachments', 'statement_id')
-    
+
+    # Topics gain a nullable `folder_id` linking them into a domain's folder tree.
+    # SQLite cannot attach a declared FK on an ALTER ADD COLUMN, so referential
+    # integrity is enforced in app code (see create_topic/update_topic) and the
+    # column is nullable so a topic may sit directly under a domain if needed.
+    _ensure_column(conn, cursor, 'topics', 'folder_id', 'INTEGER')
+
     _migrate_domains(conn, cursor)
 
     cursor.execute('SELECT COUNT(*) FROM domains')
@@ -261,6 +278,9 @@ def init_db():
     # and take only the newest handful of rows.
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_attachments_created_at ON attachments (created_at DESC)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_topics_created_at ON topics (created_at DESC)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_topics_folder_id ON topics (folder_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_folders_parent_id ON folders (parent_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_folders_domain_id ON folders (domain_id)')
 
     conn.commit()
     conn.close()
@@ -502,22 +522,37 @@ def dashboard():
 def domain(domain_id):
     conn = get_db()
     domain = conn.execute('SELECT * FROM domains WHERE id = ?', (domain_id,)).fetchone()
-    topic_rows = conn.execute('''
-        SELECT t.*, 
+    if not domain:
+        conn.close()
+        flash('Domain not found')
+        return redirect(url_for('all_domains'))
+    # Build the folder tree for this domain. Each node carries its own topics
+    # plus aggregate statement/asset counts over its entire subtree, so the UI
+    # can show both the immediate contents and the rolled-up totals.
+    folders = conn.execute(
+        'SELECT * FROM folders WHERE domain_id = ? ORDER BY name', (domain_id,)
+    ).fetchall()
+    folder_tree = build_folder_tree(conn, folders)
+    # Topics with no folder (shouldn't happen post-backfill, but keep the page
+    # honest if a topic exists with folder_id NULL).
+    loose_topics = conn.execute('''
+        SELECT t.*,
                COUNT(DISTINCT s.id) as statement_count,
                COUNT(DISTINCT a.id) as attachment_count
         FROM topics t
         LEFT JOIN statements s ON t.id = s.topic_id
         LEFT JOIN attachments a ON s.id = a.statement_id
-        WHERE t.domain_id = ?
+        WHERE t.domain_id = ? AND t.folder_id IS NULL
         GROUP BY t.id
         ORDER BY t.created_at DESC
     ''', (domain_id,)).fetchall()
     conn.close()
-    if not domain:
-        flash('Domain not found')
-        return redirect(url_for('all_domains'))
-    return render_template('domain.html', domain=domain, topics=topic_rows)
+    return render_template(
+        'domain.html',
+        domain=domain,
+        folder_tree=folder_tree,
+        loose_topics=loose_topics,
+    )
 
 @app.route('/topic/<int:topic_id>')
 def topic(topic_id):
@@ -528,6 +563,22 @@ def topic(topic_id):
         JOIN domains d ON t.domain_id = d.id 
         WHERE t.id = ?
     ''', (topic_id,)).fetchone()
+    # Walk the folder's ancestor chain (parent_id upward) to build the breadcrumb
+    # path domain › … › folder. Computed here so the template only renders it.
+    folder_path = []
+    if topic and topic['folder_id']:
+        cursor = conn.cursor()
+        fid = topic['folder_id']
+        seen = set()
+        while fid and fid not in seen:
+            seen.add(fid)
+            row = cursor.execute(
+                'SELECT id, parent_id, name FROM folders WHERE id = ?', (fid,)
+            ).fetchone()
+            if not row:
+                break
+            folder_path.insert(0, {'id': row['id'], 'name': row['name']})
+            fid = row['parent_id']
     statements = conn.execute('SELECT * FROM statements WHERE topic_id = ? ORDER BY position ASC, created_at ASC', (topic_id,)).fetchall()
     statement_ids = [s['id'] for s in statements]
     if statement_ids:
@@ -566,6 +617,7 @@ def topic(topic_id):
     return render_template(
         'topic.html',
         topic=topic,
+        folder_path=folder_path,
         statements=statements,
         attachments_by_statement=attachments_by_statement,
         evidence_data=evidence_data,
@@ -580,15 +632,150 @@ def create_topic():
     domain_id = request.form.get('domain_id')
     name = request.form.get('name', '').strip()
     description = request.form.get('description', '').strip()
+    folder_id = request.form.get('folder_id') or None
     if not domain_id or not name:
         flash('Domain and topic name are required')
         return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
-    conn.execute('INSERT INTO topics (domain_id, name, description) VALUES (?, ?, ?)', (domain_id, name, description))
+    # Validate any supplied folder belongs to this domain (topics.domain_id has
+    # no declared FK to folders, so ownership is checked here in app code).
+    if folder_id:
+        folder = conn.execute(
+            'SELECT id FROM folders WHERE id = ? AND domain_id = ?',
+            (folder_id, domain_id),
+        ).fetchone()
+        if not folder:
+            folder_id = None
+    conn.execute(
+        'INSERT INTO topics (domain_id, folder_id, name, description) VALUES (?, ?, ?, ?)',
+        (domain_id, folder_id, name, description),
+    )
     conn.commit()
     topic_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
     conn.close()
     return redirect(url_for('topic', topic_id=topic_id))
+
+@app.route('/create_folder', methods=['POST'])
+def create_folder():
+    domain_id = request.form.get('domain_id')
+    name = request.form.get('name', '').strip()
+    description = request.form.get('description', '').strip()
+    parent_id = request.form.get('parent_id') or None
+    if not domain_id or not name:
+        flash('Domain and folder name are required')
+        return redirect(request.referrer or url_for('all_domains'))
+    conn = get_db()
+    domain = conn.execute('SELECT id FROM domains WHERE id = ?', (domain_id,)).fetchone()
+    if not domain:
+        conn.close()
+        flash('Domain not found')
+        return redirect(url_for('all_domains'))
+    # A parent folder must exist and belong to this domain.
+    if parent_id:
+        parent = conn.execute(
+            'SELECT id FROM folders WHERE id = ? AND domain_id = ?',
+            (parent_id, domain_id),
+        ).fetchone()
+        if not parent:
+            parent_id = None
+    conn.execute(
+        'INSERT INTO folders (domain_id, parent_id, name, description) VALUES (?, ?, ?, ?)',
+        (domain_id, parent_id, name, description),
+    )
+    conn.commit()
+    conn.close()
+    return redirect(url_for('domain', domain_id=domain_id))
+
+@app.route('/update_folder', methods=['POST'])
+def update_folder():
+    folder_id = request.form.get('folder_id')
+    name = request.form.get('name', '').strip()
+    description = request.form.get('description', '').strip()
+    parent_id = request.form.get('parent_id') or None
+    if not folder_id or not name:
+        flash('Folder name is required')
+        return redirect(request.referrer or url_for('all_domains'))
+    conn = get_db()
+    folder = conn.execute('SELECT * FROM folders WHERE id = ?', (folder_id,)).fetchone()
+    if not folder:
+        conn.close()
+        flash('Folder not found')
+        return redirect(request.referrer or url_for('all_domains'))
+    # Re-parenting must not create a cycle: the new parent cannot be the folder
+    # itself or any of its descendants (walk the candidate parent's chain down,
+    # or equivalently check the folder is not within the new parent's subtree).
+    if parent_id:
+        if int(parent_id) == folder['id']:
+            conn.close()
+            flash('A folder cannot be its own parent')
+            return redirect(url_for('domain', domain_id=folder['domain_id']))
+        # A folder may only be re-parented within its own domain.
+        new_parent = conn.execute(
+            'SELECT id FROM folders WHERE id = ? AND domain_id = ?',
+            (parent_id, folder['domain_id']),
+        ).fetchone()
+        if not new_parent:
+            conn.close()
+            flash('Parent folder not found in this domain')
+            return redirect(url_for('domain', domain_id=folder['domain_id']))
+        # Reject if the new parent is a descendant of this folder (cycle guard),
+        # using the recursive subtree CTE over child folders.
+        cycle = conn.execute('''
+            WITH RECURSIVE subtree(id) AS (
+                SELECT id FROM folders WHERE id = ?
+                UNION ALL
+                SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+            )
+            SELECT 1 FROM subtree WHERE id = ?
+        ''', (folder['id'], parent_id)).fetchone()
+        if cycle:
+            conn.close()
+            flash('Cannot move a folder into one of its own sub-folders')
+            return redirect(url_for('domain', domain_id=folder['domain_id']))
+    conn.execute(
+        'UPDATE folders SET name = ?, description = ?, parent_id = ? WHERE id = ?',
+        (name, description, parent_id, folder_id),
+    )
+    conn.commit()
+    conn.close()
+    return redirect(url_for('domain', domain_id=folder['domain_id']))
+
+@app.route('/delete_folder/<int:folder_id>', methods=['POST'])
+def delete_folder(folder_id):
+    conn = get_db()
+    folder = conn.execute('SELECT * FROM folders WHERE id = ?', (folder_id,)).fetchone()
+    if not folder:
+        conn.close()
+        flash('Folder not found')
+        return redirect(request.referrer or url_for('all_domains'))
+    domain_id = folder['domain_id']
+    # Gather every attachment filename across the whole subtree BEFORE deleting,
+    # so the cascade cannot remove the rows that tell us which files to purge.
+    subtree_folders, subtree_topics = get_folder_subtree(conn, folder_id)
+    if subtree_topics:
+        placeholders = ','.join('?' * len(subtree_topics))
+        rows = conn.execute('''
+            SELECT a.filename FROM attachments a
+            JOIN statements s ON a.statement_id = s.id
+            WHERE s.topic_id IN (%s) AND a.filename IS NOT NULL
+        ''' % placeholders, subtree_topics).fetchall()
+    else:
+        rows = []
+    filenames = [r['filename'] for r in rows if r['filename']]
+    # `topics.folder_id` has no declared FK (SQLite cannot attach one to an
+    # ALTER-added column), so child topics must be removed explicitly, exactly
+    # like delete_domain handles topics.domain_id. The folder cascade (parent →
+    # child folders, and topics → statements → attachments) still runs; we just
+    # delete the subtree topics first, then the folder row last.
+    if subtree_topics:
+        placeholders = ','.join('?' * len(subtree_topics))
+        conn.execute('DELETE FROM topics WHERE id IN (%s)' % placeholders, subtree_topics)
+    conn.execute('DELETE FROM folders WHERE id = ?', (folder_id,))
+    conn.commit()
+    conn.close()
+    for fn in filenames:
+        _remove_upload(fn)
+    return redirect(url_for('domain', domain_id=domain_id))
 
 @app.route('/create_statement', methods=['POST'])
 def create_statement():
@@ -1046,6 +1233,94 @@ def save_table(attachment_id):
     if old_filename:
         _remove_upload(old_filename)
     return jsonify({'ok': True})
+
+
+def get_folder_subtree(conn, folder_id):
+    """Return the full subtree rooted at `folder_id` as `(folder_ids, topic_ids)`.
+
+    Uses a single recursive CTE to walk child folders, then one more CTE to
+    collect every topic that hangs anywhere under that subtree (including
+    topics attached directly to the root folder). The result lets a caller
+    compute aggregate counts or gather attachment filenames across the whole
+    tree without hitting the database once per node.
+    """
+    folder_rows = conn.execute('''
+        WITH RECURSIVE subtree(id) AS (
+            SELECT id FROM folders WHERE id = ?
+            UNION ALL
+            SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+        )
+        SELECT id FROM subtree
+    ''', (folder_id,)).fetchall()
+    folder_ids = [row['id'] for row in folder_rows]
+
+    topic_rows = conn.execute('''
+        WITH RECURSIVE subtree(id) AS (
+            SELECT id FROM folders WHERE id = ?
+            UNION ALL
+            SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+        )
+        SELECT id FROM topics WHERE folder_id IN (SELECT id FROM subtree)
+    ''', (folder_id,)).fetchall()
+    topic_ids = [row['id'] for row in topic_rows]
+
+    return folder_ids, topic_ids
+
+
+def build_folder_tree(conn, folders):
+    """Nest a flat folder list into a tree and attach topic + aggregate counts.
+
+    `folders` is any iterable of folder rows for a single domain. Each returned
+    node is a dict with the folder's columns plus `children`, `topics`, and
+    rolled-up `statement_count` / `attachment_count` over the whole subtree.
+    """
+    by_id = {}
+    for f in folders:
+        by_id[f['id']] = {
+            'id': f['id'],
+            'parent_id': f['parent_id'],
+            'name': f['name'],
+            'description': f['description'],
+            'children': [],
+            'topics': [],
+            'statement_count': 0,
+            'attachment_count': 0,
+        }
+
+    roots = []
+    for node in by_id.values():
+        if node['parent_id'] and node['parent_id'] in by_id:
+            by_id[node['parent_id']]['children'].append(node)
+        else:
+            roots.append(node)
+
+    # Aggregate per folder: its own topics then roll children up the tree.
+    for node in by_id.values():
+        rows = conn.execute('''
+            SELECT t.id, t.name, t.description,
+                   COUNT(DISTINCT s.id) as statement_count,
+                   COUNT(DISTINCT a.id) as attachment_count
+            FROM topics t
+            LEFT JOIN statements s ON t.id = s.topic_id
+            LEFT JOIN attachments a ON s.id = a.statement_id
+            WHERE t.folder_id = ?
+            GROUP BY t.id
+            ORDER BY t.created_at DESC
+        ''', (node['id'],)).fetchall()
+        node['topics'] = [dict(r) for r in rows]
+        node['statement_count'] += sum(r['statement_count'] for r in rows)
+        node['attachment_count'] += sum(r['attachment_count'] for r in rows)
+
+    def roll_up(node):
+        for child in node['children']:
+            roll_up(child)
+            node['statement_count'] += child['statement_count']
+            node['attachment_count'] += child['attachment_count']
+
+    for root in roots:
+        roll_up(root)
+
+    return roots
 
 
 def _remove_upload(filename):

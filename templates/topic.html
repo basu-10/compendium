@@ -2,7 +2,18 @@
 
 {% block title %}{{ topic.name }} - Compendium{% endblock %}
 
-{% block breadcrumb %}{% endblock %}
+{% block breadcrumb %}
+<div class="breadcrumb-bar">
+    <a href="{{ url_for('all_domains') }}">All Domains</a>
+    &gt; <a href="{{ url_for('domain', domain_id=topic.domain_id) }}">{{ topic.domain_name }}</a>
+    {% if folder_path %}
+    {% for crumb in folder_path %}
+    &gt; <a href="{{ url_for('domain', domain_id=topic.domain_id) }}#folder-header-{{ crumb.id }}">{{ crumb.name }}</a>
+    {% endfor %}
+    {% endif %}
+    &gt; <span>{{ topic.name }}</span>
+</div>
+{% endblock %}
 
 {% block content %}
 <div class="topic">
@@ -10,6 +21,17 @@
     {% set topic_delete_modal_id = 'delete-topic-' ~ topic.id %}
     <div class="section-header topic-header" id="topic-header">
         <div class="topic-title-group">
+            {% if folder_path %}
+            <a href="{{ url_for('domain', domain_id=topic.domain_id) }}#folder-header-{{ folder_path[-1].id }}" class="back-btn"
+               title="Back to {{ folder_path[-1].name }}" aria-label="Back to {{ folder_path[-1].name }}">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
+            </a>
+            {% else %}
+            <a href="{{ url_for('domain', domain_id=topic.domain_id) }}" class="back-btn"
+               title="Back to {{ topic.domain_name }}" aria-label="Back to {{ topic.domain_name }}">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
+            </a>
+            {% endif %}
             <h1>{{ topic.name }}</h1>
         </div>
         {% set edit_modal_id = topic_edit_modal_id %}

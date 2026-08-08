@@ -95,7 +95,8 @@
             {% block breadcrumb %}
             <div class="breadcrumb-bar">
                 <a href="{{ url_for('all_domains') }}">All Domains</a>{% if domain %}
-                &gt; <a href="{{ url_for('domain', domain_id=domain.id) }}">{{ domain.name }}</a>{% endif %}{% if topic %}
+                &gt; <a href="{{ url_for('domain', domain_id=domain.id) }}">{{ domain.name }}</a>{% endif %}{% if folder_path %}
+                {% for crumb in folder_path %}&gt; <a href="{{ url_for('domain', domain_id=domain.id) }}#folder-header-{{ crumb.id }}">{{ crumb.name }}</a>{% endfor %}{% endif %}{% if topic %}
                 &gt; <span>{{ topic.name }}</span>{% endif %}
             </div>
             {% endblock %}

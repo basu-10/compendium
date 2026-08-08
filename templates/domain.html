@@ -2,6 +2,96 @@
 
 {% block title %}{{ domain.name }} - Compendium{% endblock %}
 
+{% macro render_folder(node, depth=0) %}
+{% set folder_edit_modal_id = 'edit-folder-' ~ node.id %}
+{% set folder_delete_modal_id = 'delete-folder-' ~ node.id %}
+{% set add_topic_modal_id = 'add-topic-' ~ node.id %}
+{% set add_subfolder_modal_id = 'add-subfolder-' ~ node.id %}
+<div class="folder-card">
+    <div class="section-header topic-header folder-header" id="folder-header-{{ node.id }}">
+        <div class="topic-title-group">
+            <span class="folder-glyph" aria-hidden="true">&#128193;</span>
+            <h2>{{ node.name }}</h2>
+        </div>
+        {% set edit_modal_id = folder_edit_modal_id %}
+        {% set edit_url = url_for('update_folder') %}
+        {% set delete_modal_id = folder_delete_modal_id %}
+        {% set delete_url = url_for('delete_folder', folder_id=node.id) %}
+        {% set delete_title = 'Delete Folder' %}
+        {% set delete_message = 'Delete "' ~ node.name ~ '" and everything inside it (sub-folders, topics, statements and uploads)?' %}
+        {% include "components/hover_actions.html" with context %}
+    </div>
+    {% if node.description %}<p class="folder-desc">{{ node.description }}</p>{% endif %}
+    <div class="folder-meta">
+        <span class="stat-count">
+            {{ node.statement_count }} Statements &bull; {{ node.attachment_count }} Assets
+        </span>
+        <span class="folder-actions">
+            <button type="button" class="btn-link" onclick="openModal('{{ add_subfolder_modal_id }}')">+ Sub-folder</button>
+            <button type="button" class="btn-link" onclick="openModal('{{ add_topic_modal_id }}')">+ Topic</button>
+        </span>
+    </div>
+
+    {% set modal_id = add_topic_modal_id %}
+    {% set domain_id = domain.id %}
+    {% set current_folder_id = node.id %}
+    {% include "modals/add_topic.html" with context %}
+
+    {% set modal_id = add_subfolder_modal_id %}
+    {% set domain_id = domain.id %}
+    {% set parent_id = node.id %}
+    {% set title = 'New Sub-folder in ' ~ node.name %}
+    {% include "modals/add_folder.html" with context %}
+
+    {% set modal_id = folder_edit_modal_id %}
+    {% set folder_id = node.id %}
+    {% set current_name = node.name %}
+    {% set current_description = node.description or '' %}
+    {% include "modals/edit_folder.html" with context %}
+
+    {% set modal_id = folder_delete_modal_id %}
+    {% include "modals/confirm_delete.html" with context %}
+
+    <div class="folder-contents">
+        {% for topic in node.topics %}
+        {% set topic_edit_modal_id = 'edit-topic-' ~ topic.id %}
+        {% set topic_delete_modal_id = 'delete-topic-' ~ topic.id %}
+        <div class="card card-in-folder" onclick="window.location.href='{{ url_for('topic', topic_id=topic.id) }}'">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;">
+                <div style="flex: 1; min-width: 0;">
+                    <h3>{{ topic.name }}</h3>
+                    <p>{{ topic.description or 'No description' }}</p>
+                    <div class="stat-count">
+                        {{ topic.statement_count }} Statements &bull; {{ topic.attachment_count }} Assets
+                    </div>
+                </div>
+                {% set edit_modal_id = topic_edit_modal_id %}
+                {% set edit_url = url_for('update_topic') %}
+                {% set delete_modal_id = topic_delete_modal_id %}
+                {% set delete_url = url_for('delete_topic', topic_id=topic.id) %}
+                {% set delete_title = 'Delete Topic' %}
+                {% set delete_message = 'Are you sure you want to delete this topic and all its statements?' %}
+                {% include "components/hover_actions.html" with context %}
+            </div>
+
+            {% set modal_id = topic_edit_modal_id %}
+            {% set topic_id = topic.id %}
+            {% set current_name = topic.name %}
+            {% set current_description = topic.description or '' %}
+            {% include "modals/edit_topic.html" with context %}
+
+            {% set modal_id = topic_delete_modal_id %}
+            {% include "modals/confirm_delete.html" with context %}
+        </div>
+        {% endfor %}
+
+        {% for child in node.children %}
+            {{ render_folder(child, depth + 1) }}
+        {% endfor %}
+    </div>
+</div>
+{% endmacro %}
+
 {% block content %}
 <div>
     {% set domain_edit_modal_id = 'edit-domain-' ~ domain.id %}
@@ -18,11 +108,13 @@
         {% set delete_message = 'Are you sure you want to delete this domain and all its topics?' %}
         {% include "components/hover_actions.html" with context %}
     </div>
-    <p style="margin-bottom: 2rem;">{{ domain.description }}</p>
+    <p style="margin-bottom: 1.5rem;">{{ domain.description }}</p>
 
-    {% set add_topic_modal_id = 'add-topic-' ~ domain.id %}
-    {% set modal_id = add_topic_modal_id %}
-    {% include "modals/add_topic.html" with context %}
+    {% set add_folder_modal_id = 'add-folder-' ~ domain.id %}
+    {% set modal_id = add_folder_modal_id %}
+    {% set domain_id = domain.id %}
+    {% set title = 'New Folder in ' ~ domain.name %}
+    {% include "modals/add_folder.html" with context %}
 
     {% set modal_id = domain_edit_modal_id %}
     {% set domain_id = domain.id %}
@@ -33,8 +125,19 @@
     {% set modal_id = domain_delete_modal_id %}
     {% include "modals/confirm_delete.html" with context %}
 
-    <div class="grid">
-        {% for topic in topics %}
+    {% set add_topic_modal_id = 'add-topic-' ~ domain.id %}
+    {% set modal_id = add_topic_modal_id %}
+    {% set domain_id = domain.id %}
+    {% set current_folder_id = '' %}
+    {% include "modals/add_topic.html" with context %}
+
+    {% if folder_tree or loose_topics %}
+    <div class="grid folders-section">
+        {% for node in folder_tree %}
+            {{ render_folder(node, 0) }}
+        {% endfor %}
+
+        {% for topic in loose_topics %}
         {% set topic_edit_modal_id = 'edit-topic-' ~ topic.id %}
         {% set topic_delete_modal_id = 'delete-topic-' ~ topic.id %}
         <div class="card" onclick="window.location.href='{{ url_for('topic', topic_id=topic.id) }}'">
@@ -71,11 +174,23 @@
             <span class="card-new-icon" aria-hidden="true">+</span>
             <span class="card-new-body">
                 <span class="card-new-title">New Topic</span>
-                <span class="card-new-hint">
-                    {% if topics %}Add another topic to {{ domain.name }}{% else %}Create your first topic in {{ domain.name }}{% endif %}
-                </span>
+                <span class="card-new-hint">Add a topic to {{ domain.name }}</span>
+            </span>
+        </button>
+
+        <button type="button" class="card card-new" onclick="openModal('{{ add_folder_modal_id }}')"
+                aria-haspopup="dialog" aria-label="Create a new folder in this domain">
+            <span class="card-new-icon" aria-hidden="true">+</span>
+            <span class="card-new-body">
+                <span class="card-new-title">New Folder</span>
+                <span class="card-new-hint">Group topics inside {{ domain.name }}</span>
             </span>
         </button>
     </div>
+    {% else %}
+    <div class="empty-state">
+        <p>No folders or topics yet. Create a folder to start grouping topics, or add a topic directly.</p>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

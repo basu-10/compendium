@@ -9,8 +9,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <script>
-        // Apply the stored theme before first paint to avoid a flash of the
-        // default layout and a reload-loss of the selection.
+        // Apply the stored theme and sidebar state before first paint to avoid a
+        // flash of the default layout and a reload-loss of the selection.
         (function() {
             var theme = localStorage.getItem('compendium-theme') || 'legacy';
             document.documentElement.classList.add('theme-' + theme);
@@ -21,13 +21,19 @@
                     document.body.className = 'theme-' + theme;
                 });
             }
+            if (localStorage.getItem('compendium-sidebar') === 'collapsed') {
+                document.documentElement.classList.add('sidebar-collapsed');
+            }
         })();
     </script>
     {% block head %}{% endblock %}
 </head>
 <body class="theme-legacy">
     <div class="app-layout">
-        <aside class="sidebar">
+        <aside class="sidebar" id="sidebar">
+            <button type="button" class="sidebar-toggle" id="sidebar-collapse" title="Collapse sidebar" aria-label="Collapse sidebar">
+                <span class="sidebar-toggle-icon">&#10094;</span>
+            </button>
             <div class="sidebar-header">
                 <a href="{{ url_for('index') }}" class="sidebar-brand-link">
                     <div class="sidebar-brand">Compendium</div>
@@ -46,9 +52,11 @@
                 </a>
             </nav>
             <div class="sidebar-footer">
-                <a href="{{ url_for('index') }}" class="sidebar-link">
-                    <span class="sidebar-icon">&#9632;</span> Landing Page
-                </a>
+                <div class="sidebar-actions">
+                    <button class="icon-btn" id="settings-btn" title="Settings" aria-label="Settings">&#9881;</button>
+                    <button class="icon-btn" title="Notifications">&#128276;</button>
+                    <button class="btn-export">Export</button>
+                </div>
                 <a href="{{ url_for('dashboard') }}" class="sidebar-user">
                     <div class="sidebar-avatar">{{ current_user.initials }}</div>
                     <div class="sidebar-user-meta">
@@ -59,29 +67,18 @@
             </div>
         </aside>
 
-        <div class="main-area">
-            <header class="top-header">
-                <nav class="top-nav">
-                    <a href="{{ url_for('all_domains') }}" class="top-nav-link {% if request.endpoint in ['all_domains', 'domain', 'topic'] %}active{% endif %}">All Domains</a>
-                    <a href="{{ url_for('dashboard') }}" class="top-nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
-                    <a href="{{ url_for('about') }}" class="top-nav-link">About</a>
-                </nav>
-                <div class="top-actions">
-                    <div class="search-box">
-                        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
-                        <input type="text" placeholder="Search assets...">
-                    </div>
-                    <button class="icon-btn" title="Notifications">&#128276;</button>
-                    <button class="icon-btn" id="settings-btn" title="Settings" aria-label="Settings">&#9881;</button>
-                    <button class="btn-export">Export</button>
-                </div>
-            </header>
+        <button type="button" class="sidebar-show" id="sidebar-show" title="Show sidebar" aria-label="Show sidebar">
+            <span class="sidebar-toggle-icon">&#10095;</span>
+        </button>
 
+        <div class="main-area">
+            {% block breadcrumb %}
             <div class="breadcrumb-bar">
                 <a href="{{ url_for('all_domains') }}">All Domains</a>{% if domain %}
                 &gt; <a href="{{ url_for('domain', domain_id=domain.id) }}">{{ domain.name }}</a>{% endif %}{% if topic %}
                 &gt; <span>{{ topic.name }}</span>{% endif %}
             </div>
+            {% endblock %}
 
             <div class="page-content">
                 {% with messages = get_flashed_messages() %}
@@ -172,6 +169,29 @@
                     closeModal('settings-modal');
                     location.reload();
                 });
+            }
+        })();
+    </script>
+
+    <script>
+        // Collapsible sidebar: a handle on the sidebar edge collapses it, and a
+        // floating handle (top-left of the content) brings it back. The choice
+        // persists so it survives navigation/reloads.
+        (function() {
+            const root = document.documentElement;
+            const collapseBtn = document.getElementById('sidebar-collapse');
+            const showBtn = document.getElementById('sidebar-show');
+
+            function setCollapsed(collapsed) {
+                root.classList.toggle('sidebar-collapsed', collapsed);
+                localStorage.setItem('compendium-sidebar', collapsed ? 'collapsed' : 'expanded');
+            }
+
+            if (collapseBtn) {
+                collapseBtn.addEventListener('click', function() { setCollapsed(true); });
+            }
+            if (showBtn) {
+                showBtn.addEventListener('click', function() { setCollapsed(false); });
             }
         })();
     </script>

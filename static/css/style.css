@@ -51,6 +51,73 @@ body {
     left: 0;
     bottom: 0;
     z-index: 20;
+    transition: transform 0.25s ease;
+}
+
+/* Collapsed: slide the sidebar off-canvas and reclaim the space. */
+.sidebar-collapsed .sidebar {
+    transform: translateX(-100%);
+}
+
+.sidebar-collapsed .main-area {
+    margin-left: 0;
+}
+
+.sidebar-toggle {
+    position: absolute;
+    top: 50%;
+    right: -13px;
+    transform: translateY(-50%);
+    width: 26px;
+    height: 48px;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-left: none;
+    border-radius: 0 8px 8px 0;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 21;
+    transition: all 0.2s;
+}
+
+.sidebar-toggle:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-muted);
+}
+
+.sidebar-toggle-icon {
+    font-size: 0.7rem;
+    line-height: 1;
+}
+
+.sidebar-show {
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    width: 36px;
+    height: 36px;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 30;
+    transition: all 0.2s;
+}
+
+.sidebar-show:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-muted);
+}
+
+.sidebar-collapsed .sidebar-show {
+    display: flex;
 }
 
 .main-area {
@@ -59,51 +126,11 @@ body {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    transition: margin-left 0.25s ease;
 }
 
-.top-header {
-    height: 64px;
-    background-color: var(--bg-surface);
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 1.5rem;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-}
-
-.top-nav {
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
-}
-
-.top-nav-link {
-    color: var(--text-secondary);
-    text-decoration: none;
-    font-size: 0.9rem;
-    font-weight: 500;
-    padding: 1.25rem 0;
-    border-bottom: 2px solid transparent;
-    transition: color 0.2s, border-color 0.2s;
-}
-
-.top-nav-link:hover {
-    color: var(--text-primary);
-}
-
-.top-nav-link.active {
-    color: var(--text-primary);
-    border-bottom-color: var(--text-primary);
-}
-
-.top-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-}
+/* Top header removed: app pages now rely on the sidebar; public pages
+   (landing, about) use the public-header shell instead. */
 
 .search-box {
     position: relative;
@@ -238,7 +265,21 @@ body {
     border-top: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.75rem;
+}
+
+.sidebar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.sidebar-actions .icon-btn {
+    flex: 0 0 auto;
+}
+
+.sidebar-actions .btn-export {
+    margin-left: auto;
 }
 
 .btn-new-analysis {
@@ -523,6 +564,38 @@ p {
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+}
+
+.pane-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.pane-search input {
+    background-color: var(--bg-muted);
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 0.4rem 0.6rem 0.4rem 2rem;
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    width: 200px;
+    outline: none;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+.pane-search input:focus {
+    background-color: var(--bg-surface);
+    border-color: var(--border);
+}
+
+.pane-search .search-icon {
+    position: absolute;
+    left: 0.6rem;
+    color: var(--text-muted);
+    pointer-events: none;
+    display: flex;
+    align-items: center;
 }
 
 /* Statements */
@@ -1312,6 +1385,11 @@ p {
         display: none;
     }
 
+    .sidebar-toggle,
+    .sidebar-show {
+        display: none !important;
+    }
+
     .main-area {
         margin-left: 0;
     }
@@ -1365,29 +1443,17 @@ p {
         padding: 1rem;
     }
 
-    .top-header {
-        padding: 0 1rem;
-    }
-
-    .search-box input {
-        width: 160px;
-    }
-
     .page-content {
         padding: 1rem;
     }
 }
 
 @media (max-width: 640px) {
-    .top-nav {
-        display: none;
+    .sidebar-actions {
+        gap: 0.4rem;
     }
 
-    .top-actions {
-        gap: 0.5rem;
-    }
-
-    .search-box input {
+    .pane-search input {
         width: 140px;
     }
 
@@ -2358,13 +2424,14 @@ body.theme-modern .app-layout {
 
 /* Theme 2 (Modern) — topic-page-only top/bottom layout, scoped to
  * body.theme-modern .topic so every other page keeps the legacy layout.
- * Only CSS is added here; the legacy class hooks (.statement, .evidence-card,
- * #evidence-content, #statement-list) are reused unchanged. */
+ * Statements become a horizontal row of bento-style cards; assets become
+ * an organic 12-column bento grid. Legacy hooks (.statement, .evidence-card)
+ * are reused but visually reset for the new layout. */
 body.theme-modern .topic .split-layout {
     flex-direction: column;
     height: auto;
     min-height: 0;
-    gap: 1.5rem;
+    gap: 2.5rem;
 }
 
 body.theme-modern .topic .left-pane,
@@ -2373,39 +2440,105 @@ body.theme-modern .topic .right-pane {
     overflow: visible;
 }
 
-/* Top: a horizontal row of statement cards. */
+/* Top: horizontal statement cards with modern card treatment. */
 body.theme-modern .topic .statement-list {
     flex-direction: row;
     flex-wrap: wrap;
-    gap: .75rem;
+    gap: 1rem;
 }
 
 body.theme-modern .topic .statement {
-    flex: 1 1 240px;
-    margin-bottom: 0;
-    width: auto;
+    flex: 1 1 260px;
+    border-left: none;
+    border-top: 3px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+    padding: 1.25rem;
+    transition: box-shadow 0.2s, transform 0.15s, border-top-color 0.2s;
 }
 
-/* Bottom: a 12-column bento grid of assets. */
+body.theme-modern .topic .statement:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+    border-top-color: var(--accent);
+}
+
+body.theme-modern .topic .active-statement {
+    border-top-color: var(--accent);
+    box-shadow: var(--shadow);
+}
+
+/* Bottom: 12-column bento grid with organic variety. */
 body.theme-modern .topic .evidence-grid {
     grid-template-columns: repeat(12, 1fr);
+    grid-auto-rows: minmax(120px, auto);
+    gap: 1rem;
+    align-content: start;
 }
 
 body.theme-modern .topic .evidence-card {
     grid-column: span 4;
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+}
+
+body.theme-modern .topic .evidence-card:nth-child(3n+1) {
+    grid-column: span 6;
 }
 
 body.theme-modern .topic .evidence-card.expanded {
     grid-column: 1 / -1;
 }
 
-/* Bento variety so the grid does not read as a uniform table. */
-body.theme-modern .topic .evidence-card:nth-child(3n+1) {
-    grid-column: span 6;
-}
-
 body.theme-modern .topic .add-card {
     grid-column: span 4;
+    border-radius: 12px;
+}
+
+body.theme-modern .topic .add-row {
+    border-radius: 12px;
+    border-left: none;
+    border-top: 2px dashed var(--border);
+}
+
+/* Mobile: single-column statements and assets in modern theme. */
+@media (max-width: 768px) {
+    body.theme-modern .topic .statement-list {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    body.theme-modern .topic .statement {
+        flex: 1 1 auto;
+        width: 100%;
+    }
+
+    body.theme-modern .topic .evidence-grid {
+        grid-template-columns: 1fr;
+        grid-auto-rows: auto;
+    }
+
+    body.theme-modern .topic .evidence-card,
+    body.theme-modern .topic .evidence-card:nth-child(3n+1),
+    body.theme-modern .topic .add-card {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 640px) {
+    body.theme-modern .topic .split-layout {
+        gap: 1.75rem;
+    }
+
+    body.theme-modern .topic .statement {
+        padding: 1rem;
+        border-radius: 10px;
+    }
+
+    body.theme-modern .topic .evidence-card {
+        padding: 1rem;
+        border-radius: 10px;
+    }
 }
 
 /* Settings modal: layout/theme picker */

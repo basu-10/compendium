@@ -2,6 +2,8 @@
 
 {% block title %}{{ topic.name }} - Compendium{% endblock %}
 
+{% block breadcrumb %}{% endblock %}
+
 {% block content %}
 <div class="topic">
     {% set topic_edit_modal_id = 'edit-topic-' ~ topic.id %}
@@ -82,6 +84,10 @@
         <div class="right-pane" id="evidence-pane">
             <div class="pane-header">
                 <h3 id="evidence-pane-title">Assets</h3>
+                <div class="pane-search">
+                    <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+                    <input type="text" placeholder="Search assets...">
+                </div>
             </div>
             <div class="evidence-grid" id="evidence-content">
                 {% if statements %}

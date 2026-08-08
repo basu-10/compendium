@@ -2348,6 +2348,46 @@ p {
     color: var(--text-muted);
 }
 
+/* Mobile navigation: hamburger + collapsible panel, no JS dependency */
+.public-menu-toggle {
+    display: none;
+}
+
+.public-menu-btn {
+    display: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background-color: var(--bg-surface);
+    cursor: pointer;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.public-menu-btn span {
+    display: block;
+    width: 18px;
+    height: 2px;
+    background-color: var(--text-secondary);
+    border-radius: 2px;
+}
+
+.public-mobile-menu {
+    display: none;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.5rem 0 1rem;
+}
+
+.public-mobile-menu .public-nav-link {
+    padding: 0.6rem 0.25rem;
+    font-size: 0.95rem;
+}
+
 /* Responsive: public + dashboard */
 @media (max-width: 900px) {
     .prose-layout {
@@ -2357,6 +2397,10 @@ p {
 
     .prose-aside {
         position: static;
+    }
+
+    .public-container {
+        padding: 0 1.25rem;
     }
 }
 
@@ -2375,12 +2419,20 @@ p {
         margin-top: 3rem;
     }
 
-    .public-nav {
+    /* Collapse the inline desktop nav into a hamburger menu */
+    .public-nav,
+    .public-link-subtle {
         display: none;
     }
 
-    .public-link-subtle {
-        display: none;
+    .public-menu-btn {
+        display: flex;
+    }
+
+    /* Checkbox lives inside .public-header-inner; the menu is in the next
+       sibling .public-container, so reach it via :has() + general sibling. */
+    .public-header-inner:has(.public-menu-toggle:checked) ~ .public-container .public-mobile-menu {
+        display: flex;
     }
 
     .breakdown-row {
@@ -2395,9 +2447,20 @@ p {
     .profile-actions {
         width: 100%;
     }
+
+    /* Stack dashboard list rows so the meta never collides with the title */
+    .panel-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.25rem;
+    }
 }
 
 @media (max-width: 640px) {
+    .public-container {
+        padding: 0 1rem;
+    }
+
     .public-footer-links {
         gap: 2.5rem;
     }
@@ -2405,6 +2468,15 @@ p {
     .hero-actions .btn-cta-lg,
     .hero-actions .btn-ghost-lg {
         width: 100%;
+    }
+
+    .stat-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .public-footer-bottom {
+        flex-direction: column;
+        gap: 0.4rem;
     }
 }
 

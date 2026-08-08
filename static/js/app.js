@@ -70,10 +70,26 @@ function initEvidenceCards() {
         if (card.dataset.bound === '1') return;
         card.dataset.bound = '1';
         bindItemInteractions(card, {
-            expand: function() { toggleEvidenceCard(card); },
+            expand: function() { expandEvidenceCard(card); },
+            collapse: function() { collapseEvidenceCard(card); },
             edit: function() { editEvidence(card.dataset.id); },
         });
     });
+    initEvidenceOutsideCollapse();
+}
+
+// Clicking anywhere outside an expanded card collapses it, replacing the old
+// "click inside to collapse" behaviour so expanded text stays selectable.
+function initEvidenceOutsideCollapse() {
+    document.addEventListener('click', function(event) {
+        const expanded = document.querySelector('#evidence-content .evidence-card.expanded');
+        if (!expanded) return;
+        // Ignore clicks that belong to this card (its buttons/typography) or to
+        // a modal (e.g. the confirm-delete dialog) so it can be acted on.
+        if (expanded.contains(event.target)) return;
+        if (event.target.closest('.modal-overlay')) return;
+        collapseEvidenceCard(expanded);
+    }, true);
 }
 
 // --- Shared single-click / double-click interaction model ---
@@ -86,8 +102,11 @@ function bindItemInteractions(el, handlers) {
     let clickTimer = null;
 
     el.addEventListener('click', function(event) {
-        // Buttons inside the row (edit/delete/attach) own their own behaviour.
+        // Buttons inside the row (edit/delete/attach/collapse) own their own behaviour.
         if (event.target.closest('.hover-actions, a, button')) return;
+        // When collapse is delegated to a button + outside-click, a click on an
+        // already-expanded card must do nothing (so text stays selectable).
+        if (handlers.collapse && el.classList.contains('expanded')) return;
         if (clickTimer !== null) return; // second click; dblclick will fire
         clickTimer = setTimeout(function() {
             clickTimer = null;
@@ -128,21 +147,11 @@ function bindItemInteractions(el, handlers) {
         });
     }
 
-    // Delete is only reachable once the item is in edit mode. The CSS hides
-    // the button, but guard here too so a stale/forced click cannot fire.
-    const deleteBtn = el.querySelector('.hover-actions .delete-btn.gated');
-    if (deleteBtn) {
-        deleteBtn.addEventListener('click', function(event) {
-            if (!el.classList.contains('edit-mode')) {
-                event.stopImmediatePropagation();
-                event.preventDefault();
-            }
-        }, true);
-    }
+    // Delete is always available from the toolbar; the confirmation modal is
+    // what guards against an accidental click, so no extra gating here.
 }
 
-// Entering edit mode reveals the delete button and keeps the item visually
-// marked while its modal is open.
+// Edit mode keeps the item visually marked while its modal is open.
 function setEditMode(el, on) {
     if (!el) return;
     el.classList.toggle('edit-mode', !!on);
@@ -194,17 +203,11 @@ function editStatement(row) {
 // --- Evidence cards: expand in place / edit ---
 // Cards expand both ways: they span the full grid width and grow taller, up to
 // a capped height after which the body scrolls.
-function toggleEvidenceCard(card) {
-    const willExpand = !card.classList.contains('expanded');
-
+function expandEvidenceCard(card) {
+    // Only one card is expanded at a time; collapse any others first.
     document.querySelectorAll('#evidence-content .evidence-card.expanded').forEach(function(other) {
         if (other !== card) collapseEvidenceCard(other);
     });
-
-    if (!willExpand) {
-        collapseEvidenceCard(card);
-        return;
-    }
 
     card.classList.add('expanded');
     card.setAttribute('aria-expanded', 'true');
@@ -494,7 +497,7 @@ function renderEvidenceCard(att) {
 
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
-    deleteBtn.className = 'icon-btn delete-btn gated';
+    deleteBtn.className = 'icon-btn delete-btn';
     deleteBtn.title = 'Delete';
     deleteBtn.setAttribute('aria-label', 'Delete');
     deleteBtn.textContent = '\uD83D\uDDD1';
@@ -508,6 +511,18 @@ function renderEvidenceCard(att) {
         );
     });
     actions.appendChild(deleteBtn);
+
+    const collapseBtn = document.createElement('button');
+    collapseBtn.type = 'button';
+    collapseBtn.className = 'icon-btn collapse-btn';
+    collapseBtn.title = 'Restore size';
+    collapseBtn.setAttribute('aria-label', 'Restore size');
+    collapseBtn.textContent = '\u25B2';
+    collapseBtn.addEventListener('click', function(event) {
+        event.stopPropagation();
+        collapseEvidenceCard(card);
+    });
+    actions.appendChild(collapseBtn);
 
     header.appendChild(actions);
     card.appendChild(header);
@@ -570,7 +585,8 @@ function renderEvidenceCard(att) {
 
     card.dataset.bound = '1';
     bindItemInteractions(card, {
-        expand: function() { toggleEvidenceCard(card); },
+        expand: function() { expandEvidenceCard(card); },
+        collapse: function() { collapseEvidenceCard(card); },
         edit: function() { editEvidence(att.id); },
     });
 

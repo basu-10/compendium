@@ -795,6 +795,19 @@ p {
     display: none;
 }
 
+/* The restore-size button is only meaningful once a card is expanded, so hide
+   it otherwise and surface it alongside the edit/delete toolbar when expanded
+   (or on hover/keyboard focus of the header). */
+.icon-btn.collapse-btn {
+    display: none;
+}
+
+.evidence-card.expanded .hover-actions .icon-btn.collapse-btn,
+.evidence-card-header:hover .icon-btn.collapse-btn,
+.icon-btn.collapse-btn:focus-within {
+    display: flex;
+}
+
 .evidence-full {
     margin-top: 0.75rem;
     padding-top: 0.75rem;
@@ -1304,17 +1317,9 @@ p {
     }
 }
 
-/* Destructive actions are only offered once the item is explicitly in edit
-   mode, so a stray hover-click can never reach delete. Hidden rather than
-   disabled so it does not occupy space in the toolbar. */
-.icon-btn.delete-btn.gated {
-    display: none;
-}
-
-.edit-mode > .hover-actions .icon-btn.delete-btn.gated,
-.edit-mode .evidence-card-header .icon-btn.delete-btn.gated {
-    display: flex;
-}
+/* Delete sits in the toolbar alongside edit/attach and is reachable straight
+   from hover or focus. Accidental deletion is prevented by the confirmation
+   modal rather than by hiding the control, which made it undiscoverable. */
 
 /* Edit mode is deliberate, so keep its toolbar visible without a hover. */
 .edit-mode > .hover-actions,

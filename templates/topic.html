@@ -58,7 +58,6 @@
                         {% set delete_url = url_for('delete_statement', statement_id=statement.id) %}
                         {% set delete_title = 'Delete Statement' %}
                         {% set delete_message = 'Are you sure you want to delete this statement and its attachments?' %}
-                        {% set delete_gated = true %}
                         {% set attach_modal_id = attach_modal_id %}
                         {% set attach_url = url_for('create_attachment') %}
                         {% include "components/hover_actions.html" with context %}

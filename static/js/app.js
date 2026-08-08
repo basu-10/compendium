@@ -236,6 +236,8 @@ function collapseEvidenceCard(card) {
     card.setAttribute('aria-expanded', 'false');
     const full = card.querySelector('.evidence-full');
     if (full) full.hidden = true;
+    // Release any Univer canvas mounted inside this card to free memory.
+    if (window.COMPENDIUM_EDITORS) COMPENDIUM_EDITORS.teardownUniver();
 }
 
 function editEvidence(attachmentId) {
@@ -327,28 +329,46 @@ function renderEvidenceBody(body, title, type, filename, content) {
     if (kind === 'link') {
         body.appendChild(buildLink(content, content));
     } else if (kind === 'image' && (filename || content)) {
-        const img = document.createElement('img');
-        img.src = filename ? fileUrl : '/uploads/' + encodeURIComponent(content);
-        img.className = 'media-preview';
-        img.alt = title;
-        body.appendChild(img);
+        const src = filename ? fileUrl : '/uploads/' + encodeURIComponent(content);
+        if (window.COMPENDIUM_EDITORS) {
+            COMPENDIUM_EDITORS.renderImage(body, src, title);
+        } else {
+            const img = document.createElement('img');
+            img.src = src;
+            img.className = 'media-preview';
+            img.alt = title;
+            body.appendChild(img);
+        }
     } else if (kind === 'video') {
         if (filename) {
-            const video = document.createElement('video');
-            video.src = fileUrl;
-            video.controls = true;
-            video.className = 'media-preview';
-            body.appendChild(video);
+            if (window.COMPENDIUM_EDITORS) {
+                COMPENDIUM_EDITORS.renderVideo(body, fileUrl, title);
+            } else {
+                const video = document.createElement('video');
+                video.src = fileUrl;
+                video.controls = true;
+                video.className = 'media-preview';
+                body.appendChild(video);
+            }
         } else {
             body.appendChild(buildLink(content, 'Watch Video'));
         }
     } else if (kind === 'table') {
-        body.appendChild(buildLink(fileUrl || content, 'Download Table'));
+        // Editable/viewer spreadsheet (Univer) with graceful HTML fallback.
+        if (window.COMPENDIUM_EDITORS) {
+            COMPENDIUM_EDITORS.renderTable(body, card.dataset.id, filename);
+        } else {
+            body.appendChild(buildLink(fileUrl || content, 'Download Table'));
+        }
     } else if (kind === 'richtext') {
-        const pre = document.createElement('pre');
-        pre.className = 'richtext-body';
-        pre.textContent = content;
-        body.appendChild(pre);
+        if (window.COMPENDIUM_EDITORS) {
+            COMPENDIUM_EDITORS.renderRichText(body, content, true);
+        } else {
+            const pre = document.createElement('pre');
+            pre.className = 'richtext-body';
+            pre.textContent = content;
+            body.appendChild(pre);
+        }
     } else if (filename) {
         body.appendChild(buildLink(fileUrl, 'Download File'));
     } else {
@@ -585,6 +605,29 @@ function populateEditForm(attachmentId) {
             const content = form.querySelector('textarea[name="content"], input[name="content"]');
             if (title && full.title != null) title.value = full.title;
             if (content && full.content != null) content.value = full.content;
+
+            // For rich text, swap the plain textarea for a Quill editor and keep
+            // the underlying textarea as the field the form submits, syncing on
+            // every change and on submit.
+            if (full.type === 'richtext' && window.COMPENDIUM_EDITORS && content && content.tagName === 'TEXTAREA') {
+                // Guard: only build a Quill editor once per form load so
+                // re-opening the same modal does not stack duplicate editors.
+                if (content.dataset.quillReady === '1') return;
+                content.dataset.quillReady = '1';
+                const wrapper = document.createElement('div');
+                content.parentNode.insertBefore(wrapper, content);
+                wrapper.appendChild(content);
+                content.style.display = 'none';
+                const q = COMPENDIUM_EDITORS.renderRichText(wrapper, full.content || '', false);
+                if (q) {
+                    q.on('text-change', function () {
+                        content.value = q.root.innerHTML;
+                    });
+                    form.addEventListener('submit', function () {
+                        content.value = q.root.innerHTML;
+                    });
+                }
+            }
         })
         .catch(function() {});
 }

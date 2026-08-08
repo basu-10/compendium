@@ -8,6 +8,26 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    {# --- Rich-text (Quill), spreadsheet (Univer) and video (Plyr) ---
+       All loaded from CDN. Their own stylesheets carry fixed colours, so
+       compendium.css overrides them per theme (legacy/modern) further down.
+       Quill is small and synchronous; Univer is heavier and exposes a global
+       `Univer`/`univer` constructor used by the asset renderer; Plyr enhances
+       the native <video> element for consistent playback controls. #}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@univerjs/design@0.1.13/lib/index.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.css">
+    <script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@univerjs/core@0.1.13/lib/index.iife.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@univerjs/design@0.1.13/lib/index.iife.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@univerjs/engine-render@0.1.13/lib/index.iife.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@univerjs/engine-formula@0.1.13/lib/index.iife.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@univerjs/ui@0.1.13/lib/index.iife.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@univerjs/sheets@0.1.13/lib/index.iife.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@univerjs/sheets-ui@0.1.13/lib/index.iife.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@univerjs/plugins@0.1.13/lib/index.iife.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.polyfilled.js"></script>
     <script>
         // Apply the stored theme and sidebar state before first paint to avoid a
         // flash of the default layout and a reload-loss of the selection.
@@ -97,6 +117,7 @@
     </div>
 
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/editors.js') }}"></script>
     {% block scripts %}{% endblock %}
 
     <!-- Settings: layout/theme selection. "legacy" is the current layout;

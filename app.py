@@ -1,8 +1,15 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory
+from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory, jsonify
 import sqlite3
 import os
+import csv
+import io
 import uuid
 from datetime import datetime
+
+# Marker string used to namespace Univer workbook data stored inside an
+# attachment's `content` column when a table has been edited in-browser rather
+# than backed by an uploaded file. Kept short and unambiguous to avoid clashes.
+UNIVER_DATA_PREFIX = 'univer:'
 
 app = Flask(__name__)
 app.secret_key = 'compendium-secret-key-change-in-production'
@@ -932,6 +939,113 @@ def attachment(attachment_id):
         'filename': row['filename'] or '',
     }
     return payload
+
+
+def _table_to_rows(filename, content):
+    """Return a list-of-rows (list of lists of strings) for a table asset.
+
+    `content` is either an uploaded filename (read from disk) or, after an
+    in-browser Univer edit, a `univer:`-prefixed CSV payload stored directly in
+    the column. CSV/TSV are parsed with the stdlib; the binary spreadsheet
+    formats (xls/xlsx/ods) are returned as None because we cannot parse them
+    without an extra dependency, in which case the client falls back to a
+    download link and a read-only view is unavailable.
+    """
+    raw = content
+    if content and not content.startswith(UNIVER_DATA_PREFIX) and filename:
+        # Uploaded file: read its bytes from the upload folder.
+        try:
+            path = os.path.realpath(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            upload_dir = os.path.realpath(app.config['UPLOAD_FOLDER'])
+            if os.path.commonpath([upload_dir, path]) == upload_dir:
+                with open(path, 'rb') as fh:
+                    raw = fh.read().decode('utf-8', errors='replace')
+        except OSError:
+            raw = content
+
+    if raw and raw.startswith(UNIVER_DATA_PREFIX):
+        raw = raw[len(UNIVER_DATA_PREFIX):]
+
+    if not raw:
+        return None
+
+    ext = filename.rsplit('.', 1)[1].lower() if filename and '.' in filename else 'csv'
+    # Binary spreadsheet formats cannot be parsed with the stdlib, so signal
+    # "unsupported" and let the client keep the download-only fallback. Parsing
+    # raw bytes as CSV would corrupt the file into a single bogus cell.
+    if ext in ('xls', 'xlsx', 'ods'):
+        return None
+
+    delimiter = '\t' if ext == 'tsv' else ','
+    try:
+        reader = csv.reader(io.StringIO(raw), delimiter=delimiter)
+        return [list(row) for row in reader]
+    except (csv.Error, ValueError):
+        return None
+
+
+@app.route('/attachment/<int:attachment_id>/table')
+def attachment_table(attachment_id):
+    """Return a table asset as JSON rows for the Univer editor.
+
+    Uploaded CSV/TSV files and previously in-browser-edited tables resolve to a
+    row matrix. Binary spreadsheet formats (xls/xlsx/ods) cannot be parsed by
+    the stdlib, so they come back with `supported: false` and the client keeps
+    the download-only behaviour.
+    """
+    conn = get_db()
+    row = conn.execute(
+        'SELECT id, type, content, filename FROM attachments WHERE id = ?',
+        (attachment_id,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'error': 'not found'}), 404
+    if asset_kind(row['type'], row['filename']) != 'table':
+        return jsonify({'error': 'not a table'}), 400
+
+    rows = _table_to_rows(row['filename'], row['content'])
+    if rows is None:
+        return jsonify({'supported': False, 'filename': row['filename'] or ''})
+    return jsonify({'supported': True, 'rows': rows, 'filename': row['filename'] or ''})
+
+
+@app.route('/save_table/<int:attachment_id>', methods=['POST'])
+def save_table(attachment_id):
+    """Persist an in-browser Univer edit back to the attachment.
+
+    The client exports the sheet to CSV and POSTs it as `csv`. It is stored in
+    the `content` column under the `univer:` prefix so it round-trips without a
+    binary file, and `filename` is cleared so the row is no longer treated as a
+    file-backed asset. A stored file is removed on disk once superseded.
+    """
+    conn = get_db()
+    existing = conn.execute('SELECT * FROM attachments WHERE id = ?', (attachment_id,)).fetchone()
+    if not existing:
+        conn.close()
+        return jsonify({'error': 'not found'}), 404
+
+    csv_text = request.form.get('csv', '')
+    if not csv_text.strip():
+        conn.close()
+        return jsonify({'error': 'empty table'}), 400
+
+    old_filename = existing['filename']
+    try:
+        conn.execute(
+            'UPDATE attachments SET content = ?, filename = ? WHERE id = ?',
+            (UNIVER_DATA_PREFIX + csv_text, None, attachment_id)
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': 'could not save'}), 500
+    conn.close()
+
+    if old_filename:
+        _remove_upload(old_filename)
+    return jsonify({'ok': True})
 
 
 def _remove_upload(filename):

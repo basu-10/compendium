@@ -2598,3 +2598,157 @@ body.theme-modern .topic .add-row {
     font-size: 0.8rem;
     color: var(--text-secondary);
 }
+
+/* ===========================================================================
+   Rich-text (Quill) + Spreadsheet (Univer) editors
+   Both libraries ship fixed-colour stylesheets; these overrides retheme them
+   from the active compendium palette so they look native under BOTH themes
+   (legacy + modern). The blocks are scoped to body.theme-* so the two themes
+   can resolve to different surfaces without global leakage.
+   =========================================================================== */
+
+/* --- Quill (rich text) --- */
+.ql-toolbar.ql-snow,
+.ql-container.ql-snow {
+    border-color: var(--border);
+}
+.ql-toolbar.ql-snow {
+    border-radius: 8px 8px 0 0;
+    background: var(--bg-muted);
+}
+.ql-container.ql-snow {
+    border-radius: 0 0 8px 8px;
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.95rem;
+}
+.ql-snow .ql-stroke { stroke: var(--text-secondary); }
+.ql-snow .ql-fill { fill: var(--text-secondary); }
+.ql-snow .ql-picker { color: var(--text-secondary); }
+.ql-snow.ql-toolbar button:hover .ql-stroke,
+.ql-snow.ql-toolbar button.ql-active .ql-stroke { stroke: var(--accent); }
+.ql-snow.ql-toolbar button:hover .ql-fill,
+.ql-snow.ql-toolbar button.ql-active .ql-fill { fill: var(--accent); }
+.ql-snow.ql-toolbar button:hover .ql-picker,
+.ql-snow.ql-toolbar button.ql-active .ql-picker { color: var(--accent); }
+.ql-snow .ql-picker-options { background: var(--bg-surface); }
+.ql-editor.ql-blank::before { color: var(--text-muted); font-style: normal; }
+.ql-editor { min-height: 160px; }
+
+/* A compact reader variant used inside expanded asset cards (no toolbar). */
+.richtext-reader .ql-container.ql-snow { border: none; background: transparent; }
+.richtext-reader .ql-editor { min-height: 0; padding: 0; }
+
+/* --- Univer (spreadsheet) --- */
+/* Univer reads these --univer-* custom properties when present; we map them
+   to the current theme so the sheet's chrome matches the surrounding UI. */
+body.theme-legacy {
+    --univer-bg: #ffffff;
+    --univer-surface: #f3f4f6;
+    --univer-border: #e5e7eb;
+    --univer-text: #111827;
+    --univer-text-secondary: #6b7280;
+    --univer-accent: #111827;
+    --univer-grid: #e5e7eb;
+    --univer-header-bg: #f3f4f6;
+}
+body.theme-modern {
+    --univer-bg: #ffffff;
+    --univer-surface: #eef2ff;
+    --univer-border: #dbeafe;
+    --univer-text: #0f172a;
+    --univer-text-secondary: #475569;
+    --univer-accent: #4f46e5;
+    --univer-grid: #dbeafe;
+    --univer-header-bg: #eef2ff;
+}
+
+.univer-host {
+    width: 100%;
+    height: 420px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--univer-bg);
+}
+.univer-host.univer-fallback {
+    height: auto;
+    display: block;
+    padding: 0;
+}
+/* Fallback HTML table rendered when Univer cannot load or the file is a
+   binary format it cannot parse inline. */
+.univer-fallback table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+.univer-fallback th,
+.univer-fallback td {
+    border: 1px solid var(--univer-grid, var(--border));
+    padding: 6px 10px;
+    text-align: left;
+    color: var(--text-primary);
+}
+.univer-fallback thead th {
+    background: var(--univer-header-bg, var(--bg-muted));
+    position: sticky;
+    top: 0;
+}
+.univer-fallback-wrap {
+    max-height: 420px;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+/* --- Image (display only) --- */
+.asset-image-frame {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--bg-muted);
+    display: flex;
+    justify-content: center;
+}
+.asset-image-frame .media-preview {
+    max-width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* --- Video (Plyr) ---
+   Plyr reads --plyr-color-main for its accent; we map it to the active theme
+   so the progress/volume fills match legacy vs modern. The rest of Plyr's
+   chrome is dark by default, which reads fine on both light themes. */
+body.theme-legacy { --plyr-color-main: #111827; }
+body.theme-modern { --plyr-color-main: #4f46e5; }
+
+.asset-video-frame {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #000;
+}
+.asset-video-frame .plyr-video,
+.asset-video-frame .media-preview {
+    width: 100%;
+    display: block;
+    border: none;
+}
+
+/* Edit affordance: a save button shown under an editable Univer sheet. */
+.asset-editor-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    align-items: center;
+}
+.asset-editor-status {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-left: auto;
+}
+.asset-editor-status.saved { color: #16a34a; }
+.asset-editor-status.error { color: var(--danger); }

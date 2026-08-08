@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory, jsonify
 import sqlite3
 import os
+import shutil
 import csv
 import io
 import uuid
@@ -533,6 +534,14 @@ def domain(domain_id):
         'SELECT * FROM folders WHERE domain_id = ? ORDER BY name', (domain_id,)
     ).fetchall()
     folder_tree = build_folder_tree(conn, folders)
+    # Flat, depth-indented folder list for the Move-topic <select>. Walk the
+    # nested tree so parent folders always precede their children.
+    all_folders = []
+    def walk(nodes, depth):
+        for n in nodes:
+            all_folders.append({'id': n['id'], 'name': n['name'], 'depth': depth, 'indent': '\u00a0' * (depth * 4)})
+            walk(n['children'], depth + 1)
+    walk(folder_tree, 0)
     # Topics with no folder (shouldn't happen post-backfill, but keep the page
     # honest if a topic exists with folder_id NULL).
     loose_topics = conn.execute('''
@@ -551,6 +560,7 @@ def domain(domain_id):
         'domain.html',
         domain=domain,
         folder_tree=folder_tree,
+        all_folders=all_folders,
         loose_topics=loose_topics,
     )
 
@@ -579,6 +589,20 @@ def topic(topic_id):
                 break
             folder_path.insert(0, {'id': row['id'], 'name': row['name']})
             fid = row['parent_id']
+    # Flat, depth-indented folder list for the Move-topic <select> (the topic
+    # page header also exposes Move). Reuses the same nesting as the domain page.
+    all_folders = []
+    if topic:
+        domain_folders = conn.execute(
+            'SELECT * FROM folders WHERE domain_id = ? ORDER BY name', (topic['domain_id'],)
+        ).fetchall()
+        domain_tree = build_folder_tree(conn, domain_folders)
+
+        def walk(nodes, depth):
+            for n in nodes:
+                all_folders.append({'id': n['id'], 'name': n['name'], 'depth': depth, 'indent': '\u00a0' * (depth * 4)})
+                walk(n['children'], depth + 1)
+        walk(domain_tree, 0)
     statements = conn.execute('SELECT * FROM statements WHERE topic_id = ? ORDER BY position ASC, created_at ASC', (topic_id,)).fetchall()
     statement_ids = [s['id'] for s in statements]
     if statement_ids:
@@ -618,6 +642,7 @@ def topic(topic_id):
         'topic.html',
         topic=topic,
         folder_path=folder_path,
+        all_folders=all_folders,
         statements=statements,
         attachments_by_statement=attachments_by_statement,
         evidence_data=evidence_data,
@@ -1335,6 +1360,159 @@ def _remove_upload(filename):
         os.remove(path)
     except OSError:
         pass
+
+
+def _copy_attachment(conn, src_att, new_statement_id):
+    """Insert a deep copy of `src_att` for `new_statement_id`.
+
+    File-backed attachments get a fresh uuid filename and the physical file is
+    copied into UPLOAD_FOLDER; content-only types keep their body verbatim.
+    Returns the new attachment row id.
+    """
+    att_type = src_att['type']
+    filename = src_att['filename']
+    content = src_att['content']
+    if filename and att_type not in CONTENT_ONLY_TYPES:
+        ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+        new_filename = f"{uuid.uuid4().hex}.{ext}" if ext else f"{uuid.uuid4().hex}"
+        src_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        dst_path = os.path.join(app.config['UPLOAD_FOLDER'], new_filename)
+        # Only copy when the source file actually exists; otherwise point the
+        # copy at the original name so it still renders rather than 500-ing.
+        if os.path.exists(src_path):
+            shutil.copy(src_path, dst_path)
+            content = new_filename
+            filename = new_filename
+    cursor = conn.execute(
+        'INSERT INTO attachments (statement_id, title, type, content, filename, position) '
+        'VALUES (?, ?, ?, ?, ?, ?)',
+        (new_statement_id, src_att['title'], att_type, content, filename, src_att['position']),
+    )
+    return cursor.lastrowid
+
+
+def _copy_topic(conn, src_topic, new_folder_id=None):
+    """Deep-copy `src_topic` (statements + attachments + files) into `new_folder_id`.
+
+    If `new_folder_id` is None the copy keeps the original's folder_id (used by
+    duplicate_topic). Returns the new topic id.
+    """
+    folder_id = src_topic['folder_id'] if new_folder_id is None else new_folder_id
+    cursor = conn.execute(
+        "INSERT INTO topics (domain_id, folder_id, name, description, created_at) "
+        "VALUES (?, ?, 'Copy of ' || ?, ?, ?)",
+        (src_topic['domain_id'], folder_id, src_topic['name'],
+         src_topic['description'], src_topic['created_at']),
+    )
+    new_topic_id = cursor.lastrowid
+    src_statements = conn.execute(
+        'SELECT * FROM statements WHERE topic_id = ? ORDER BY position ASC, created_at ASC',
+        (src_topic['id'],),
+    ).fetchall()
+    for src_stmt in src_statements:
+        cursor = conn.execute(
+            'INSERT INTO statements (topic_id, text, position) VALUES (?, ?, ?)',
+            (new_topic_id, src_stmt['text'], src_stmt['position']),
+        )
+        new_statement_id = cursor.lastrowid
+        src_attachments = conn.execute(
+            'SELECT * FROM attachments WHERE statement_id = ? ORDER BY position ASC, created_at DESC',
+            (src_stmt['id'],),
+        ).fetchall()
+        for src_att in src_attachments:
+            _copy_attachment(conn, src_att, new_statement_id)
+    return new_topic_id
+
+
+@app.route('/move_topic', methods=['POST'])
+def move_topic():
+    topic_id = request.form.get('topic_id')
+    folder_id = request.form.get('folder_id') or None
+    conn = get_db()
+    topic = conn.execute('SELECT * FROM topics WHERE id = ?', (topic_id,)).fetchone()
+    if not topic:
+        conn.close()
+        flash('Topic not found')
+        return redirect(request.referrer or url_for('all_domains'))
+    domain_id = topic['domain_id']
+    # Validate the target folder belongs to this domain (topics.folder_id has no
+    # declared FK, so ownership is enforced in app code like create_topic does).
+    if folder_id:
+        folder = conn.execute(
+            'SELECT id FROM folders WHERE id = ? AND domain_id = ?',
+            (folder_id, domain_id),
+        ).fetchone()
+        if not folder:
+            conn.close()
+            flash('Folder not found in this domain')
+            return redirect(url_for('domain', domain_id=domain_id))
+    conn.execute('UPDATE topics SET folder_id = ? WHERE id = ?', (folder_id, topic_id))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('domain', domain_id=domain_id))
+
+
+@app.route('/duplicate_topic/<int:topic_id>', methods=['POST'])
+def duplicate_topic(topic_id):
+    conn = get_db()
+    topic = conn.execute('SELECT * FROM topics WHERE id = ?', (topic_id,)).fetchone()
+    if not topic:
+        conn.close()
+        flash('Topic not found')
+        return redirect(request.referrer or url_for('all_domains'))
+    domain_id = topic['domain_id']
+    try:
+        _copy_topic(conn, topic)
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        flash('Could not duplicate this topic')
+        return redirect(url_for('domain', domain_id=domain_id))
+    conn.close()
+    return redirect(url_for('domain', domain_id=domain_id))
+
+
+@app.route('/duplicate_folder/<int:folder_id>', methods=['POST'])
+def duplicate_folder(folder_id):
+    conn = get_db()
+    folder = conn.execute('SELECT * FROM folders WHERE id = ?', (folder_id,)).fetchone()
+    if not folder:
+        conn.close()
+        flash('Folder not found')
+        return redirect(request.referrer or url_for('all_domains'))
+    domain_id = folder['domain_id']
+
+    def copy_subtree(old_fid, new_parent_id):
+        """Recursively copy a folder and its whole subtree, parent before child."""
+        src = conn.execute('SELECT * FROM folders WHERE id = ?', (old_fid,)).fetchone()
+        cursor = conn.execute(
+            "INSERT INTO folders (domain_id, parent_id, name, description, created_at) "
+            "VALUES (?, ?, 'Copy of ' || ?, ?, ?)",
+            (domain_id, new_parent_id, src['name'], src['description'], src['created_at']),
+        )
+        new_fid = cursor.lastrowid
+        src_topics = conn.execute(
+            'SELECT * FROM topics WHERE folder_id = ?', (old_fid,)
+        ).fetchall()
+        for src_topic in src_topics:
+            _copy_topic(conn, src_topic, new_fid)
+        children = conn.execute(
+            'SELECT id FROM folders WHERE parent_id = ?', (old_fid,)
+        ).fetchall()
+        for child in children:
+            copy_subtree(child['id'], new_fid)
+
+    try:
+        copy_subtree(folder_id, folder['parent_id'])
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        flash('Could not duplicate this folder')
+        return redirect(url_for('domain', domain_id=domain_id))
+    conn.close()
+    return redirect(url_for('domain', domain_id=domain_id))
 
 
 @app.route('/update_topic', methods=['POST'])

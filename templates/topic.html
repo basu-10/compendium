@@ -19,6 +19,7 @@
 <div class="topic">
     {% set topic_edit_modal_id = 'edit-topic-' ~ topic.id %}
     {% set topic_delete_modal_id = 'delete-topic-' ~ topic.id %}
+    {% set topic_move_modal_id = 'move-topic-' ~ topic.id %}
     <div class="section-header topic-header" id="topic-header">
         <div class="topic-title-group">
             {% if folder_path %}
@@ -40,6 +41,9 @@
         {% set delete_url = url_for('delete_topic', topic_id=topic.id) %}
         {% set delete_title = 'Delete Topic' %}
         {% set delete_message = 'Are you sure you want to delete this topic and all its statements?' %}
+        {% set move_modal_id = topic_move_modal_id %}
+        {% set move_url = url_for('move_topic') %}
+        {% set duplicate_url = url_for('duplicate_topic', topic_id=topic.id) %}
         {% include "components/hover_actions.html" with context %}
     </div>
 
@@ -188,6 +192,11 @@
     {% set title = 'Delete Topic' %}
     {% set message = 'Are you sure you want to delete this topic and all its statements?' %}
     {% include "modals/confirm_delete.html" with context %}
+
+    {% set modal_id = topic_move_modal_id %}
+    {% set topic_id = topic.id %}
+    {% set current_folder_id = topic.folder_id %}
+    {% include "modals/move_topic.html" with context %}
 </div>
 {% endblock %}
 

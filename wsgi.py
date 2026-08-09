@@ -11,7 +11,7 @@ import sys
 import os
 
 PROJECT_DIR = '/home/<username>/compendium'
-VENV_ACTIVATE = os.path.join(PROJECT_DIR, 'venv', 'bin', 'activate_this.py')
+VENV_ACTIVATE = os.path.join(os.path.dirname(PROJECT_DIR), 'compendium-venv', 'bin', 'activate_this.py')
 
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)

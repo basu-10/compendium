@@ -24,10 +24,20 @@ UNIVER_DATA_PREFIX = 'univer:'
 app = Flask(__name__)
 # CHANGE THIS before deploying: a stable random secret protects session cookies.
 app.secret_key = os.environ.get('COMPANION_SECRET_KEY', 'compendium-dev-secret-key-change-me')
-app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+# Runtime data (database, uploads, logs) lives OUTSIDE the repo so the code can
+# be updated with `git clone`/`git pull` without touching generated data. The
+# expected on-disk layout is:
+#   compendium/        -> this git repo (code only)
+#   compendium-data/   -> database, uploads, logs (sibling of the repo)
+#   compendium-venv/   -> virtual environment (sibling of the repo)
+# Paths resolve to a sibling directory named "compendium-data" next to this repo.
+REPO_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(os.path.dirname(REPO_DIR), 'compendium-data')
+
+app.config['UPLOAD_FOLDER'] = os.path.join(DATA_DIR, 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max upload
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'compendium.db')
+DB_PATH = os.path.join(DATA_DIR, 'compendium.db')
 
 # Asset types are grouped into a small set of render "kinds" so that cards only
 # ever need to know how to draw: richtext, image, video, table, file, link.

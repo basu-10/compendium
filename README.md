@@ -24,15 +24,19 @@ breadcrumb navigation.
 ## Project Structure
 
 ```
-compendium/
-├── app.py                 # Flask app, routes, DB init/migration, upload handling
-├── requirements.txt       # Python dependencies (Flask)
-├── setup_and_run.sh       # Bootstraps a venv and starts the app
-├── data/                  # SQLite database (gitignored)
-├── uploads/               # User-uploaded files (gitignored)
-├── templates/             # Jinja2 templates (base, landing, domain, topic, ...)
-├── static/                # CSS and JavaScript assets
-└── venv/                  # Virtual environment (gitignored)
+compendium/            # git repo (code only) — update with git clone / git pull
+├── app.py             # Flask app, routes, DB init/migration, upload handling
+├── requirements.txt   # Python dependencies (Flask)
+├── setup_and_run.sh   # Bootstraps the external venv and starts the app
+├── wsgi.py            # PythonAnywhere WSGI entry point
+├── templates/         # Jinja2 templates (base, landing, domain, topic, ...)
+└── static/            # CSS and JavaScript assets
+
+compendium-data/       # runtime data, sibling of the repo (NOT in git)
+├── compendium.db      # SQLite database
+└── uploads/           # user-uploaded files
+
+compendium-venv/       # virtual environment, sibling of the repo (NOT in git)
 ```
 
 ## Getting Started
@@ -47,14 +51,14 @@ compendium/
 ./setup_and_run.sh
 ```
 
-This creates a virtual environment, installs dependencies from `requirements.txt`, and
-launches the app.
+This creates the virtual environment at `../compendium-venv`, the data directory at
+`../compendium-data`, installs dependencies from `requirements.txt`, and launches the app.
 
 ### Option 2: Manual setup
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+python3 -m venv ../compendium-venv
+source ../compendium-venv/bin/activate
 pip install -r requirements.txt
 python app.py
 ```
@@ -67,17 +71,19 @@ The app starts on **port `10000`** with debug mode enabled:
 http://localhost:10000
 ```
 
-On first launch it creates the SQLite database (`data/compendium.db`), runs any required
-schema migrations, and seeds three example domains.
+Generated data lives outside the repo (at `../compendium-data`): the SQLite database
+(`compendium.db`) and the `uploads/` folder. These are created on first launch, and are
+**not** affected by `git clone`/`git pull`. On first launch it also runs any required
+schema migrations and seeds three example domains.
 
 ## Configuration
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `app.secret_key` | `compendium-secret-key-change-in-production` | Flask session key — **change before deploying**. |
-| `UPLOAD_FOLDER` | `uploads/` | Where uploaded files are stored. |
+| `app.secret_key` | `compendium-dev-secret-key-change-me` | Flask session key — **change before deploying**. |
+| `UPLOAD_FOLDER` | `../compendium-data/uploads` | Where uploaded files are stored (sibling of the repo). |
 | `MAX_CONTENT_LENGTH` | `100 MB` | Maximum upload size. |
-| `DB_PATH` | `data/compendium.db` | SQLite database location. |
+| `DB_PATH` | `../compendium-data/compendium.db` | SQLite database location (sibling of the repo). |
 
 ## Data Model
 
@@ -129,20 +135,22 @@ The app is served via WSGI (not the dev server). `app.py` guards its `app.run()`
 behind `if __name__ == '__main__'` and runs `init_db()` at import time, so a
 fresh clone boots cleanly under a WSGI server.
 
-1. **Push to a Git host** (GitHub/GitLab/Bitbucket):
+ 1. **Push to a Git host** (GitHub/GitLab/Bitbucket):
    ```bash
    git add -A && git commit -m "deploy" && git push origin main
    ```
-   `data/`, `uploads/`, `venv/`, and `__pycache__` are gitignored, so only
-   source is pushed.
+   Only source is pushed; `compendium-data/` and `compendium-venv/` live outside
+   the repo and are never committed.
 
-2. **On PythonAnywhere** (Bash console), clone and set up the venv once:
+2. **On PythonAnywhere** (Bash console), clone and set up the venv once. Because
+   data and venv sit *outside* the repo, you can later re-run `git clone` /
+   `git pull` freely without touching them:
    ```bash
    cd ~
    git clone https://github.com/<you>/compendium.git
    cd compendium
-   python3 -m venv venv
-   source venv/bin/activate
+   python3 -m venv ../compendium-venv
+   source ../compendium-venv/bin/activate
    pip install --upgrade pip
    pip install -r requirements.txt
    ```
@@ -156,10 +164,14 @@ fresh clone boots cleanly under a WSGI server.
    ```bash
    cd ~/compendium
    git pull origin main
-   source venv/bin/activate
+   source ../compendium-venv/bin/activate
    pip install -r requirements.txt   # only if requirements.txt changed
    ```
    Then click **Reload `<username>.pythonanywhere.com`** in the Web tab.
+
+   Because `compendium-data/` (database + uploads) and `compendium-venv/` are
+   siblings of the repo, a fresh `git clone` into `~/compendium` never disturbs
+   your data or virtual environment.
 
 ### Configuration for production
 - Set the `COMPANION_SECRET_KEY` environment variable to a strong random value

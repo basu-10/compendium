@@ -8,12 +8,23 @@
         <h1 class="auth-title">Welcome back</h1>
         <p class="auth-sub">Log in with your username and password.</p>
 
+        {% if auth_error %}
+        <div class="auth-error" role="alert">
+            {% if auth_error == 'no_account' %}
+                <p>No account found for "<strong>{{ prefill_username|e }}</strong>".</p>
+            {% elif auth_error == 'wrong_password' %}
+                <p>Incorrect password for "<strong>{{ prefill_username|e }}</strong>".</p>
+            {% endif %}
+            <a href="{{ url_for('signup', next=next, username=prefill_username) }}" class="btn-primary btn-sm">Create an account instead</a>
+        </div>
+        {% endif %}
+
         <form id="auth-form" method="POST" action="{{ url_for('auth') }}" autocomplete="on">
             <input type="hidden" name="next" value="{{ next }}">
 
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" autocomplete="username" required>
+                <input type="text" id="username" name="username" value="{{ prefill_username|e }}" autocomplete="username" required>
             </div>
 
             <div class="form-group">

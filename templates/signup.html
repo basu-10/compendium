@@ -8,13 +8,13 @@
         <h1 class="auth-title">Create your account</h1>
         <p class="auth-sub">We've generated a username and password for you. Keep them or choose your own, then create &amp; log in.</p>
 
-        <form id="auth-form" method="POST" action="{{ url_for('auth') }}" autocomplete="on">
+        <form id="auth-form" method="POST" action="{{ url_for('register') }}" autocomplete="on">
             <input type="hidden" name="next" value="{{ next }}">
 
             <div class="form-group">
                 <label for="username">Username</label>
                 <div class="input-with-button">
-                    <input type="text" id="username" name="username" value="{{ suggested_username|e }}" autocomplete="username" required>
+                    <input type="text" id="username" name="username" value="{{ request.args.get('username', suggested_username)|e }}" autocomplete="username" required>
                     <button type="button" class="btn-secondary btn-sm" id="regen-username">Regenerate</button>
                 </div>
             </div>

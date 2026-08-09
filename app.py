@@ -2924,18 +2924,23 @@ def signup_regenerate():
 def login():
     if g.user is not None:
         return redirect(url_for('dashboard'))
-    return render_template('login.html', next=request.args.get('next', ''))
+    return render_template(
+        'login.html',
+        next=request.args.get('next', ''),
+        auth_error=request.args.get('error', ''),
+        prefill_username=request.args.get('username', ''),
+    )
 
 
 @app.route('/auth', methods=['POST'])
 def auth():
-    """Single create-or-login action used by both the signup and login forms.
+    """Login-only action for the sign-in form.
 
-    If the username does not yet exist it is created (hashed password) and the
-    new account is logged in. If it exists the password is checked and, on
-    match, the account is logged in. One button ("Create & Login" / "Login")
-    drives both flows; the form submits natively so the browser password
-    manager can offer to save the credentials.
+    Looks the user up by username and verifies the password. On any failure
+    (unknown username or wrong password) it redirects back to /login with an
+    error and the typed username preserved, so the user can decide to switch
+    to sign-up themselves. Sign-up (account creation) is handled separately by
+    /register so we never silently create an account during a failed login.
     """
     username = (request.form.get('username') or '').strip()
     password = request.form.get('password') or ''
@@ -2946,21 +2951,51 @@ def auth():
 
     conn = get_db()
     user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
-    if user is None:
-        # New account: create it.
-        conn.execute(
-            'INSERT INTO users (username, password_hash) VALUES (?, ?)',
-            (username, generate_password_hash(password)),
-        )
-        conn.commit()
-        user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
-    else:
-        if not check_password_hash(user['password_hash'], password):
-            conn.close()
-            flash('Incorrect password')
-            return redirect(url_for('login', next=next_page))
-
     conn.close()
+    if user is None:
+        flash('No account found for that username. Create one to get started.')
+        return redirect(url_for('login', next=next_page, error='no_account', username=username))
+    if not check_password_hash(user['password_hash'], password):
+        flash('Incorrect password. Create an account instead?')
+        return redirect(url_for('login', next=next_page, error='wrong_password', username=username))
+
+    session.clear()
+    session['user_id'] = user['id']
+    if next_page:
+        return redirect(url_for(next_page))
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/register', methods=['POST'])
+def register():
+    """Create a new account and log the user in.
+
+    This is the only route that creates users, so a failed login can never
+    auto-provision an account. Reached from the sign-up form (and the
+    "create an account" button shown after a failed login).
+    """
+    username = (request.form.get('username') or '').strip()
+    password = request.form.get('password') or ''
+    next_page = request.form.get('next') or request.args.get('next') or ''
+    if not username or not password:
+        flash('Username and password are required')
+        return redirect(url_for('signup', next=next_page))
+
+    conn = get_db()
+    existing = conn.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
+    if existing is not None:
+        conn.close()
+        flash('That username is already taken. Try logging in instead.')
+        return redirect(url_for('login', next=next_page, error='exists', username=username))
+
+    conn.execute(
+        'INSERT INTO users (username, password_hash) VALUES (?, ?)',
+        (username, generate_password_hash(password)),
+    )
+    conn.commit()
+    user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+    conn.close()
+
     session.clear()
     session['user_id'] = user['id']
     if next_page:

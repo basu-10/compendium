@@ -497,7 +497,7 @@ def init_db():
         # example domains to it so the existing data is not orphaned.
         cursor.execute(
             'INSERT INTO users (username, password_hash) VALUES (?, ?)',
-            ('asesh', generate_password_hash('password@8981724403')),
+            ('testuser', generate_password_hash('test@123')),
         )
         seed_owner_id = cursor.lastrowid
     else:
@@ -530,11 +530,11 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_folders_domain_id ON folders (domain_id)')
 
     # Reassign any owner-less content (legacy rows created before ownership
-    # moved to topics/folders, or a fresh seed) to the seed account `asesh` so
+    # moved to topics/folders, or a fresh seed) to the seed account `testuser` so
     # nothing is orphaned. Statements and attachments inherit ownership through
     # their topic, so only topics/folders need a direct owner here. Guarded to
     # only touch NULL rows, making it safe to run on every startup.
-    cursor.execute('SELECT id FROM users WHERE username = ?', ('asesh',))
+    cursor.execute('SELECT id FROM users WHERE username = ?', ('testuser',))
     seed_row = cursor.fetchone()
     if seed_row is not None:
         seed_owner_id = seed_row['id']

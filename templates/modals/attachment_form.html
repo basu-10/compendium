@@ -17,6 +17,9 @@
         <button type="button" class="attach-tab" role="tab" aria-selected="false"
                 id="tab-upload-{{ statement_id }}" aria-controls="panel-upload-{{ statement_id }}"
                 data-tab="upload">Upload File</button>
+        <button type="button" class="attach-tab" role="tab" aria-selected="false"
+                id="tab-scrape-{{ statement_id }}" aria-controls="panel-scrape-{{ statement_id }}"
+                data-tab="scrape">Scrape URL</button>
     </div>
 
     <div class="attach-tab-panel active" id="panel-paste-{{ statement_id }}" role="tabpanel"
@@ -35,6 +38,19 @@
             <label for="att-file-{{ statement_id }}">Upload <span class="optional">(optional)</span></label>
             <input type="file" id="att-file-{{ statement_id }}" name="file">
             <span class="file-hint" id="file-hint-{{ statement_id }}"></span>
+        </div>
+    </div>
+
+    <div class="attach-tab-panel" id="panel-scrape-{{ statement_id }}" role="tabpanel"
+         aria-labelledby="tab-scrape-{{ statement_id }}" hidden>
+        <div class="form-group">
+            <label for="att-scrape-url-{{ statement_id }}">Page URL</label>
+            <div class="scrape-row">
+                <input type="url" id="att-scrape-url-{{ statement_id }}" name="scrape_url"
+                       placeholder="https://example.com/article">
+                <button type="button" class="btn-secondary" id="scrape-btn-{{ statement_id }}">Get Content</button>
+            </div>
+            <span class="file-hint" id="scrape-status-{{ statement_id }}"></span>
         </div>
     </div>
 
@@ -68,22 +84,67 @@
         if (name === 'paste') {
             var c = root.querySelector('#att-content-{{ statement_id }}');
             if (c) c.focus();
-        } else {
+        } else if (name === 'upload') {
             var f = root.querySelector('#att-file-{{ statement_id }}');
             if (f) f.focus();
+        } else if (name === 'scrape') {
+            var u = root.querySelector('#att-scrape-url-{{ statement_id }}');
+            if (u) u.focus();
         }
     }
     tabs.forEach(function (t) {
         t.addEventListener('click', function () { selectTab(t.dataset.tab); });
     });
-    // Switching tabs clears the other input so the two methods stay mutually exclusive.
+    // Switching tabs clears the other inputs so the methods stay mutually exclusive.
     var contentEl = root.querySelector('#att-content-{{ statement_id }}');
     var fileEl = root.querySelector('#att-file-{{ statement_id }}');
+    var scrapeUrlEl = root.querySelector('#att-scrape-url-{{ statement_id }}');
+    function clearOthers(except) {
+        if (except !== 'content' && contentEl) contentEl.value = '';
+        if (except !== 'file' && fileEl) fileEl.value = '';
+        if (except !== 'scrape' && scrapeUrlEl) scrapeUrlEl.value = '';
+    }
     if (contentEl) contentEl.addEventListener('input', function () {
-        if (contentEl.value.trim() && fileEl && fileEl.value) { fileEl.value = ''; }
+        if (contentEl.value.trim()) clearOthers('content');
     });
     if (fileEl) fileEl.addEventListener('change', function () {
-        if (fileEl.value && contentEl && contentEl.value.trim()) { contentEl.value = ''; }
+        if (fileEl.value) clearOthers('file');
+    });
+    if (scrapeUrlEl) scrapeUrlEl.addEventListener('input', function () {
+        if (scrapeUrlEl.value.trim()) clearOthers('scrape');
+    });
+
+    // Scrape tab: fetch the URL, run the capture pipeline, populate Title + Content.
+    var scrapeBtn = root.querySelector('#scrape-btn-{{ statement_id }}');
+    var scrapeStatus = root.querySelector('#scrape-status-{{ statement_id }}');
+    var titleEl = root.querySelector('#att-title-{{ statement_id }}');
+    if (scrapeBtn) scrapeBtn.addEventListener('click', function () {
+        var url = scrapeUrlEl.value.trim();
+        if (!url) { scrapeStatus.textContent = 'Enter a URL first.'; return; }
+        scrapeBtn.disabled = true;
+        scrapeBtn.textContent = 'Fetching…';
+        scrapeStatus.textContent = '';
+        fetch('/api/scrape_preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: url })
+        }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+          .then(function (res) {
+            if (!res.ok || !res.j.ok) {
+                throw new Error((res.j && res.j.error) || 'Scrape failed');
+            }
+            if (titleEl && !titleEl.value.trim()) titleEl.value = res.j.title || '';
+            if (contentEl) contentEl.value = res.j.content || '';
+            selectTab('paste');
+            scrapeStatus.textContent = 'Content loaded — review and click Add Asset.';
+          })
+          .catch(function (err) {
+            scrapeStatus.textContent = err.message || 'Scrape failed';
+          })
+          .finally(function () {
+            scrapeBtn.disabled = false;
+            scrapeBtn.textContent = 'Get Content';
+          });
     });
 })();
 </script>

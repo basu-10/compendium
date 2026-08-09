@@ -52,6 +52,11 @@ function closeModal(modalId) {
     }
 }
 
+function toggleModalFullscreen(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) modal.classList.toggle('fullscreen');
+}
+
 // Close modal on outside click
 document.addEventListener('click', function(event) {
     document.querySelectorAll('.modal-overlay.active').forEach(modal => {

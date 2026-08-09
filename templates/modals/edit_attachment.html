@@ -4,6 +4,9 @@
       action="{{ url_for('update_attachment') }}" enctype="multipart/form-data">
     <input type="hidden" name="attachment_id" value="{{ attachment.id }}">
     <h3 id="{{ modal_id }}-title">Edit Asset</h3>
+    <button type="button" class="modal-icon-btn fullscreen-modal" title="Toggle fullscreen"
+            aria-label="Toggle fullscreen"
+            onclick="toggleModalFullscreen('{{ modal_id }}')">&#9974;</button>
 
     <div class="form-group">
         <label for="edit-att-title-{{ attachment.id }}">Title</label>

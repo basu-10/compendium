@@ -1802,26 +1802,18 @@ def _rewrite_image_srcs(html, session, upload_folder, seen_hashes):
     return str(soup)
 
 
-@app.route('/api/capture', methods=['POST'])
-def api_capture():
-    """Capture a webpage: readability → sanitize → rehost images → save as richtext attachment."""
-    data = request.get_json(silent=True) or {}
-    statement_id = data.get('statement_id')
-    title = (data.get('title') or '').strip()
-    url = (data.get('url') or '').strip()
-    html = data.get('html') or ''
-    tags = (data.get('tags') or '').strip()
-
-    if not statement_id or not url or not html:
-        return jsonify({'ok': False, 'error': 'statement_id, url, and html are required'}), 400
-
+def _build_capture(title, url, html):
+    """Run the shared webpage-capture pipeline: readability → sanitize →
+    rehost images → compose a richtext body. Returns (source_title, composed_html).
+    Used by both the extension's /api/capture (which inserts) and the on-site
+    scrape tab's /api/scrape_preview (which returns the fields for review)."""
     # 1. Readability extraction
     try:
         doc = readability.Document(html)
         article_html = doc.summary()
         extracted_title = doc.title() or ''
     except Exception as e:
-        return jsonify({'ok': False, 'error': f'Readability failed: {e}'}), 500
+        raise RuntimeError(f'Readability failed: {e}')
 
     # 2. Sanitize article HTML
     clean_html = _sanitize_html(article_html)
@@ -1843,7 +1835,63 @@ def api_capture():
         excerpt_html = f'<p>{first_p.get_text(strip=True)[:300]}</p>'
     hr = '<hr>'
     composed = f'{source_link}{excerpt_html}{hr}{final_html}'
+    return source_title, composed
 
+
+@app.route('/api/scrape_preview', methods=['POST'])
+def api_scrape_preview():
+    """On-site scrape tab: fetch a URL (or use supplied html), run the capture
+    pipeline, and return the cleaned title + richtext content WITHOUT inserting.
+    The client populates the modal fields so the user can review before saving."""
+    data = request.get_json(silent=True) or {}
+    title = (data.get('title') or '').strip()
+    url = (data.get('url') or '').strip()
+    html = data.get('html') or ''
+
+    if not url:
+        return jsonify({'ok': False, 'error': 'url is required'}), 400
+
+    # The on-site tab only has the URL; fetch it server-side.
+    if not html:
+        try:
+            resp = requests.get(url, timeout=15, headers={'User-Agent': 'Mozilla/5.0 (compatible; CompendiumCapture/1.0)'})
+            resp.raise_for_status()
+            html = resp.text
+        except Exception as e:
+            return jsonify({'ok': False, 'error': f'Could not fetch URL: {e}'}), 502
+
+    try:
+        source_title, composed = _build_capture(title, url, html)
+    except RuntimeError as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+    return jsonify({'ok': True, 'title': source_title, 'content': composed, 'source_url': url})
+
+
+@app.route('/api/capture', methods=['POST'])
+def api_capture():
+    """Capture a webpage: readability → sanitize → rehost images → save as richtext attachment."""
+    data = request.get_json(silent=True) or {}
+    statement_id = data.get('statement_id')
+    title = (data.get('title') or '').strip()
+    url = (data.get('url') or '').strip()
+    html = data.get('html') or ''
+    tags = (data.get('tags') or '').strip()
+
+    if not statement_id or not url:
+        return jsonify({'ok': False, 'error': 'statement_id and url are required'}), 400
+
+    # The browser extension supplies the page's raw HTML; when called from the
+    # on-site scrape tab we only have the URL, so fetch it server-side.
+    if not html:
+        try:
+            resp = requests.get(url, timeout=15, headers={'User-Agent': 'Mozilla/5.0 (compatible; CompendiumCapture/1.0)'})
+            resp.raise_for_status()
+            html = resp.text
+        except Exception as e:
+            return jsonify({'ok': False, 'error': f'Could not fetch URL: {e}'}), 502
+
+    source_title, composed = _build_capture(title, url, html)
     # 5. Insert as richtext attachment with source_url
     conn = get_db()
     try:

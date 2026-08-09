@@ -1072,7 +1072,12 @@ async function quickAddFromClipboard(statementId, mode) {
             const files = [];
             for (const item of items) {
                 for (const type of (item.types || [])) {
-                    if (type.startsWith('image/') || type.startsWith('application/') || type.startsWith('text/')) {
+                    // Only binary payloads (images, files) become uploaded assets.
+                    // text/* types are handled below via the plain-text path so
+                    // clipboard text becomes a richtext asset rather than an opaque
+                    // "document" blob, and so a mixed clipboard (text + image)
+                    // still falls through to the text fallback when no image is present.
+                    if (type.startsWith('image/') || type.startsWith('application/')) {
                         try {
                             const blob = await item.getType(type);
                             if (blob && blob.size > 0) {
@@ -1093,6 +1098,7 @@ async function quickAddFromClipboard(statementId, mode) {
                     }
                 }
             }
+            // Prefer an uploaded image/file over text when both are present.
             if (files.length) {
                 uploadDroppedFiles(statementId, files);
                 return;

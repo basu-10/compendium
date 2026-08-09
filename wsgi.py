@@ -24,10 +24,11 @@ _ws = logging.StreamHandler(sys.stderr)
 _ws.setFormatter(logging.Formatter('%(asctime)s %(levelname)s [%(name)s] %(message)s'))
 wsgi_logger.addHandler(_ws)
 
-# The project is expected at /home/<username>/compendium. Derive the home dir
-# from this file's real location so it works regardless of your account name.
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
-USER_HOME = os.path.dirname(PROJECT_DIR)
+# On PythonAnywhere the WSGI file always lives in /var/www/, so we CANNOT derive
+# the project dir from __file__ (that would resolve to /var/www and `app` would
+# never be importable). Instead we build the paths from the account's home dir.
+USER_HOME = os.path.expanduser('~')
+PROJECT_DIR = os.path.join(USER_HOME, 'compendium')
 VENV_DIR = os.path.join(USER_HOME, 'compendium-venv')
 
 # Force the runtime data directory so the app reads/writes the DB you uploaded,

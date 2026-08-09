@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, sen
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import os
+import sys
 import shutil
 import csv
 import io
@@ -10,6 +11,7 @@ import uuid
 import secrets
 import hashlib
 import string
+import logging
 from datetime import datetime
 from bs4 import BeautifulSoup
 import nh3
@@ -21,6 +23,58 @@ import requests
 # than backed by an uploaded file. Kept short and unambiguous to avoid clashes.
 UNIVER_DATA_PREFIX = 'univer:'
 
+# ---------------------------------------------------------------------------
+# Debug logging. Writes to a rotating log file under the data dir (sibling of
+# the repo) and to stderr so failures are diagnosable on PythonAnywhere, where
+# stdout/stderr from the WSGI worker is the only window into startup problems.
+# Controlled by the COMPANION_DEBUG env var (any non-empty value enables it);
+# defaults to ON when FLASK_DEBUG is set or running outside a production WSGI.
+# ---------------------------------------------------------------------------
+DEBUG_ENABLED = bool(os.environ.get('COMPANION_DEBUG') or os.environ.get('FLASK_DEBUG'))
+REPO_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.environ.get(
+    'COMPANION_DATA_DIR',
+    os.path.join(os.path.dirname(REPO_DIR), 'compendium-data'),
+)
+
+logger = logging.getLogger('compendium')
+if DEBUG_ENABLED:
+    logger.setLevel(logging.DEBUG)
+else:
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
+    def _ensure_debug_logger():
+        try:
+            os.makedirs(DATA_DIR, exist_ok=True)
+        except OSError:
+            return None
+        log_path = os.path.join(DATA_DIR, 'compendium.log')
+        try:
+            fh = logging.FileHandler(log_path, encoding='utf-8')
+        except OSError:
+            return None
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(logging.Formatter(
+            '%(asctime)s %(levelname)s [%(name)s] %(message)s'
+        ))
+        logger.addHandler(fh)
+        logger.info('Debug logging initialized -> %s', log_path)
+        return fh
+
+    _ensure_debug_logger()
+
+# Always also echo to stderr so the WSGI/web-server error log captures startup.
+_stderr = logging.StreamHandler(sys.stderr)
+_stderr.setLevel(logging.DEBUG)
+_stderr.setFormatter(logging.Formatter(
+    '%(asctime)s %(levelname)s [%(name)s] %(message)s'
+))
+logger.addHandler(_stderr)
+logger.info('Compendium starting: REPO_DIR=%s DATA_DIR=%s DEBUG=%s',
+            REPO_DIR, DATA_DIR, DEBUG_ENABLED)
+
+
 app = Flask(__name__)
 # CHANGE THIS before deploying: a stable random secret protects session cookies.
 app.secret_key = os.environ.get('COMPANION_SECRET_KEY', 'compendium-dev-secret-key-change-me')
@@ -31,16 +85,37 @@ app.secret_key = os.environ.get('COMPANION_SECRET_KEY', 'compendium-dev-secret-k
 #   compendium-data/   -> database, uploads, logs (sibling of the repo)
 #   compendium-venv/   -> virtual environment (sibling of the repo)
 # Paths resolve to a sibling directory named "compendium-data" next to this repo.
-REPO_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.environ.get(
-    'COMPANION_DATA_DIR',
-    os.path.join(os.path.dirname(REPO_DIR), 'compendium-data'),
-)
+# NOTE: REPO_DIR and DATA_DIR are defined once, near the top of the file in the
+# debug-logging block, so they are available to the logger before Flask config.
 
 app.config['UPLOAD_FOLDER'] = os.path.join(DATA_DIR, 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max upload
 
 DB_PATH = os.path.join(DATA_DIR, 'compendium.db')
+logger.info('DB_PATH=%s (exists=%s)', DB_PATH, os.path.exists(DB_PATH))
+
+
+@app.before_request
+def _debug_log_request():
+    """Log every incoming request so a silent 404/500 is traceable."""
+    if DEBUG_ENABLED:
+        logger.debug('>> %s %s', request.method, request.path)
+
+
+@app.after_request
+def _debug_log_response(response):
+    if DEBUG_ENABLED:
+        logger.debug('<< %s %s -> %s', request.method, request.path,
+                     response.status_code)
+    return response
+
+
+@app.errorhandler(Exception)
+def _debug_log_exception(err):
+    logger.exception('Unhandled exception on %s %s: %s',
+                     request.method, request.path, err)
+    raise
+
 
 # Asset types are grouped into a small set of render "kinds" so that cards only
 # ever need to know how to draw: richtext, image, video, table, file, link.
@@ -318,6 +393,7 @@ def _backfill_positions(conn, cursor, table, parent_column):
 
 
 def init_db():
+    logger.info('init_db() called; DB_PATH=%s exists_before=%s', DB_PATH, os.path.exists(DB_PATH))
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = get_db()
     cursor = conn.cursor()
@@ -470,6 +546,17 @@ def init_db():
         )
 
     conn.commit()
+    try:
+        counts = {
+            'users': cursor.execute('SELECT COUNT(*) FROM users').fetchone()[0],
+            'domains': cursor.execute('SELECT COUNT(*) FROM domains').fetchone()[0],
+            'topics': cursor.execute('SELECT COUNT(*) FROM topics').fetchone()[0],
+            'statements': cursor.execute('SELECT COUNT(*) FROM statements').fetchone()[0],
+            'attachments': cursor.execute('SELECT COUNT(*) FROM attachments').fetchone()[0],
+        }
+        logger.info('init_db() complete; row counts=%s', counts)
+    except Exception as _e:
+        logger.warning('init_db() finished but post-commit count failed: %s', _e)
     conn.close()
 
 

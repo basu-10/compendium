@@ -15,6 +15,14 @@ PythonAnywhere images.
 
 import os
 import sys
+import glob
+import logging
+
+wsgi_logger = logging.getLogger('compendium.wsgi')
+wsgi_logger.setLevel(logging.DEBUG)
+_ws = logging.StreamHandler(sys.stderr)
+_ws.setFormatter(logging.Formatter('%(asctime)s %(levelname)s [%(name)s] %(message)s'))
+wsgi_logger.addHandler(_ws)
 
 # The project is expected at /home/<username>/compendium. Derive the home dir
 # from this file's real location so it works regardless of your account name.
@@ -27,6 +35,16 @@ VENV_DIR = os.path.join(USER_HOME, 'compendium-venv')
 DATA_DIR = os.path.join(USER_HOME, 'compendium-data')
 os.environ['COMPANION_DATA_DIR'] = DATA_DIR
 
+# Enable verbose debug logging in the WSGI worker so startup/venv/data problems
+# are captured. Unset COMPANION_DEBUG (or set to empty) to silence file logging.
+os.environ.setdefault('COMPANION_DEBUG', '1')
+
+wsgi_logger.info('WSGI boot: PROJECT_DIR=%s USER_HOME=%s VENV_DIR=%s DATA_DIR=%s',
+                 PROJECT_DIR, USER_HOME, VENV_DIR, DATA_DIR)
+wsgi_logger.info('WSGI boot: venv exists=%s data_dir exists=%s db exists=%s',
+                 os.path.isdir(VENV_DIR), os.path.isdir(DATA_DIR),
+                 os.path.exists(os.path.join(DATA_DIR, 'compendium.db')))
+
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
@@ -35,15 +53,23 @@ if PROJECT_DIR not in sys.path:
 # sys.path (the exact mechanism `activate_this.py` used to perform).
 LEGACY_ACTIVATE = os.path.join(VENV_DIR, 'bin', 'activate_this.py')
 if os.path.exists(LEGACY_ACTIVATE):
+    wsgi_logger.info('WSGI boot: using legacy activate_this.py')
     with open(LEGACY_ACTIVATE) as _f:
         exec(_f.read(), {'__file__': LEGACY_ACTIVATE})
 else:
-    import glob
     site_dirs = glob.glob(os.path.join(VENV_DIR, 'lib', 'python*', 'site-packages'))
+    if not site_dirs:
+        wsgi_logger.error('WSGI boot: NO venv site-packages found under %s', VENV_DIR)
     for _site in site_dirs:
         if _site not in sys.path:
             sys.path.insert(0, _site)
+    wsgi_logger.info('WSGI boot: injected %d venv site-packages dir(s)', len(site_dirs))
 
 # `app.py` runs init_db() at import time, so the SQLite schema is
 # created/migrated on first request after a reload.
-from app import app as application
+try:
+    from app import app as application
+    wsgi_logger.info('WSGI boot: app imported successfully')
+except Exception as _boot_err:
+    wsgi_logger.exception('WSGI boot: failed to import app: %s', _boot_err)
+    raise

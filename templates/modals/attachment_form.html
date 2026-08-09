@@ -25,10 +25,36 @@
     <div class="attach-tab-panel active" id="panel-paste-{{ statement_id }}" role="tabpanel"
          aria-labelledby="tab-paste-{{ statement_id }}">
         <div class="form-group">
-            <label for="att-content-{{ statement_id }}">Content / URL <span class="optional">(optional)</span></label>
-            <textarea id="att-content-{{ statement_id }}" name="content" rows="4"
-                      placeholder="Paste text to make a rich text note, or a https:// link"></textarea>
-            <span class="form-hint">A bare https:// link makes a link asset; any other text makes a rich text note.</span>
+            <label>Content <span class="optional">(optional)</span></label>
+
+            <div class="paste-mode-toggle" role="group" aria-label="Paste mode">
+                <button type="button" class="paste-mode-btn active" data-mode="text" aria-pressed="true">Text</button>
+                <button type="button" class="paste-mode-btn" data-mode="url" aria-pressed="false">URL</button>
+            </div>
+
+            <div class="paste-text-mode">
+                <div class="rich-editor-host" id="att-rich-editor-{{ statement_id }}"></div>
+                <textarea id="att-content-hidden-{{ statement_id }}" name="content" style="display:none"></textarea>
+            </div>
+
+            <div class="paste-url-mode" hidden>
+                <input type="url" id="att-content-url-{{ statement_id }}" name="content_url"
+                       placeholder="https://example.com/article">
+            </div>
+
+            <div class="split-paste-btn">
+                <button type="button" class="paste-icon-btn" title="Paste with formatting" aria-label="Paste with formatting">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+                </button>
+                <button type="button" class="paste-dropdown-trigger" title="Paste options" aria-label="Paste options" aria-haspopup="true" aria-expanded="false">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                <div class="paste-dropdown-menu" role="menu">
+                    <button type="button" class="paste-dropdown-item" data-paste-action="plain" role="menuitem">Paste as plain text</button>
+                </div>
+            </div>
+
+            <span class="form-hint paste-form-hint">Rich text note — formatting preserved.</span>
         </div>
     </div>
 
@@ -77,13 +103,18 @@
             t.setAttribute('aria-selected', active ? 'true' : 'false');
         });
         root.querySelectorAll('.attach-tab-panel').forEach(function (p) {
-            var active = p.id === 'panel-' + name + '-{{ statement_id }}';
+            var active = p.id === 'panel-' + name + '{{ statement_id }}';
             p.classList.toggle('active', active);
             if (active) { p.removeAttribute('hidden'); } else { p.setAttribute('hidden', ''); }
         });
         if (name === 'paste') {
-            var c = root.querySelector('#att-content-{{ statement_id }}');
-            if (c) c.focus();
+            var ckHost = root.querySelector('.rich-editor-host');
+            if (ckHost && typeof getCkeditorForHost === 'function') {
+                var editor = getCkeditorForHost(ckHost);
+                if (editor && editor.editing && editor.editing.view && editor.editing.view.focus) {
+                    editor.editing.view.focus();
+                }
+            }
         } else if (name === 'upload') {
             var f = root.querySelector('#att-file-{{ statement_id }}');
             if (f) f.focus();
@@ -95,24 +126,33 @@
     tabs.forEach(function (t) {
         t.addEventListener('click', function () { selectTab(t.dataset.tab); });
     });
-    // Switching tabs clears the other inputs so the methods stay mutually exclusive.
-    var contentEl = root.querySelector('#att-content-{{ statement_id }}');
     var fileEl = root.querySelector('#att-file-{{ statement_id }}');
     var scrapeUrlEl = root.querySelector('#att-scrape-url-{{ statement_id }}');
+    var hiddenTextarea = root.querySelector('#att-content-hidden-{{ statement_id }}');
+    var urlInput = root.querySelector('#att-content-url-{{ statement_id }}');
     function clearOthers(except) {
-        if (except !== 'content' && contentEl) contentEl.value = '';
+        if (except !== 'content') {
+            if (hiddenTextarea) hiddenTextarea.value = '';
+            if (urlInput) urlInput.value = '';
+        }
         if (except !== 'file' && fileEl) fileEl.value = '';
         if (except !== 'scrape' && scrapeUrlEl) scrapeUrlEl.value = '';
     }
-    if (contentEl) contentEl.addEventListener('input', function () {
-        if (contentEl.value.trim()) clearOthers('content');
-    });
-    if (fileEl) fileEl.addEventListener('change', function () {
-        if (fileEl.value) clearOthers('file');
-    });
-    if (scrapeUrlEl) scrapeUrlEl.addEventListener('input', function () {
-        if (scrapeUrlEl.value.trim()) clearOthers('scrape');
-    });
+    if (urlInput) {
+        urlInput.addEventListener('input', function () {
+            if (urlInput.value.trim()) clearOthers('content');
+        });
+    }
+
+    if (typeof initAttachModalPaste === 'function') {
+        initAttachModalPaste(root, '{{ statement_id }}', function () { clearOthers('content'); });
+    } else {
+        window.addEventListener('load', function () {
+            if (typeof initAttachModalPaste === 'function') {
+                initAttachModalPaste(root, '{{ statement_id }}', function () { clearOthers('content'); });
+            }
+        });
+    }
 
     // Scrape tab: fetch the URL, run the capture pipeline, populate Title + Content.
     var scrapeBtn = root.querySelector('#scrape-btn-{{ statement_id }}');
@@ -134,7 +174,7 @@
                 throw new Error((res.j && res.j.error) || 'Scrape failed');
             }
             if (titleEl && !titleEl.value.trim()) titleEl.value = res.j.title || '';
-            if (contentEl) contentEl.value = res.j.content || '';
+            if (hiddenTextarea) hiddenTextarea.value = res.j.content || '';
             selectTab('paste');
             scrapeStatus.textContent = 'Content loaded — review and click Add Asset.';
           })

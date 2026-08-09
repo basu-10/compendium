@@ -1209,6 +1209,7 @@ def create_attachment():
     if not statement_id:
         flash('Statement is required')
         return redirect(request.referrer or url_for('all_domains'))
+    conn = get_db()
     stmt = require_statement_owner(conn, statement_id)
     if not stmt:
         conn.close()
@@ -1231,6 +1232,7 @@ def create_attachment():
         att_type = 'richtext'
 
     if att_type is None:
+        conn.close()
         flash('Add a title with some text, a URL, or upload a file')
         return redirect(request.referrer or url_for('all_domains'))
 
@@ -1243,7 +1245,6 @@ def create_attachment():
         else:
             title = 'Untitled'
 
-    conn = get_db()
     filename = None
 
     if file and file.filename:

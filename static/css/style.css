@@ -3282,3 +3282,118 @@ body.theme-modern { --plyr-color-main: #4f46e5; }
     font-size: 0.95rem;
     padding: 1rem 0;
 }
+
+/* --- Auth pages (signup / login) --- */
+.auth-wrap {
+    max-width: 440px;
+    margin: 4rem auto;
+    padding: 0 1rem;
+}
+.auth-card {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: var(--shadow-md);
+}
+.auth-title {
+    margin: 0 0 0.5rem;
+    font-size: 1.5rem;
+}
+.auth-sub {
+    margin: 0 0 1.5rem;
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+}
+.input-with-button {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch;
+}
+.input-with-button input {
+    flex: 1;
+}
+.btn-sm {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.8rem;
+}
+.checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.auth-actions {
+    flex-direction: column;
+    align-items: stretch;
+}
+.auth-actions .btn-primary {
+    width: 100%;
+}
+.btn-link {
+    text-align: center;
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+.btn-link:hover {
+    text-decoration: underline;
+}
+
+/* --- Public / owner attribution --- */
+.owner-badge {
+    display: inline-block;
+    margin-top: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+.public-attrib {
+    margin-top: 0.75rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+.public-attrib strong {
+    color: var(--text-primary);
+}
+.public-attrib-owner {
+    color: var(--accent);
+}
+
+/* Badge shown on public topics/folders (owner view) */
+.is-public-badge {
+    display: inline-block;
+    margin-left: 0.5rem;
+    padding: 0.1rem 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #fff;
+    background-color: var(--accent, #2563eb);
+    border-radius: 999px;
+    vertical-align: middle;
+}
+
+/* Read-only (other user's public content) gets a subtle tint */
+.topic.readonly .topic-header {
+    border-left: 3px solid var(--accent, #2563eb);
+    padding-left: 0.75rem;
+}
+
+.sidebar-logout {
+    display: block;
+    margin-top: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+    border-radius: 6px;
+}
+.sidebar-logout:hover {
+    background-color: var(--bg-surface);
+    color: var(--text-primary);
+}
+

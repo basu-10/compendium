@@ -16,7 +16,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="topic">
+<div class="topic" data-can-edit="{{ '1' if can_edit else '0' }}">
     {% set topic_edit_modal_id = 'edit-topic-' ~ topic.id %}
     {% set topic_delete_modal_id = 'delete-topic-' ~ topic.id %}
     {% set topic_move_modal_id = 'move-topic-' ~ topic.id %}
@@ -33,7 +33,7 @@
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
             </a>
             {% endif %}
-            <h1>{{ topic.name }}</h1>
+            <h1>{{ topic.name }}{% if topic.is_public %} <span class="is-public-badge">Public</span>{% endif %}</h1>
         </div>
         {% set edit_modal_id = topic_edit_modal_id %}
         {% set edit_url = url_for('update_topic') %}
@@ -44,8 +44,14 @@
         {% set move_modal_id = topic_move_modal_id %}
         {% set move_url = url_for('move_topic') %}
         {% set duplicate_url = url_for('duplicate_topic', topic_id=topic.id) %}
-        {% include "components/hover_actions.html" with context %}
+        {% if can_edit %}{% include "components/hover_actions.html" with context %}{% endif %}
     </div>
+
+    {% if not can_edit %}
+    <div class="public-attrib">Public topic &middot; by <strong>{{ owner_username }}</strong></div>
+    {% elif topic.is_public %}
+    <div class="public-attrib public-attrib-owner">Public &middot; visible to everyone</div>
+    {% endif %}
 
     <div class="topic-intro" id="topic-intro">
         <p><strong>Overview:</strong> {{ topic.description or 'No description provided for this topic.' }}</p>
@@ -94,7 +100,7 @@
                         {% set stmt_move_modal_id = 'move-statement-' ~ statement.id %}
                         {% set move_url = url_for('move_statement', statement_id=statement.id) %}
                         {% set move_modal_id = stmt_move_modal_id %}
-                        {% include "components/hover_actions.html" with context %}
+                        {% if can_edit %}{% include "components/hover_actions.html" with context %}{% endif %}
 
                         {% set summary = evidence_summary(attachments_by_statement.get(statement.id)) %}
                         {% include "components/evidence_summary.html" with context %}
@@ -124,6 +130,7 @@
                     {% for att in attachments_by_statement.get(first_id, []) %}
                         {% include "components/evidence_card.html" with context %}
                     {% endfor %}
+                    {% if can_edit %}
                     {# Placeholder tile that attaches evidence to whichever
                        statement is currently selected. Recreated by
                        showEvidence() on selection, so it is identified by class
@@ -136,9 +143,14 @@
                             {% if attachments_by_statement.get(first_id) %}Add asset{% else %}Add the first asset{% endif %}
                         </span>
                     </button>
+                    {% endif %}
                 {% else %}
                     <div class="empty-state">
+                        {% if can_edit %}
                         <p>Add a statement first, then attach an asset to it.</p>
+                        {% else %}
+                        <p>This topic has no statements yet.</p>
+                        {% endif %}
                     </div>
                 {% endif %}
             </div>
@@ -203,6 +215,7 @@
     {% set topic_id = topic.id %}
     {% set current_name = topic.name %}
     {% set current_description = topic.description or '' %}
+    {% set current_is_public = topic.is_public %}
     {% include "modals/edit_topic.html" with context %}
 
     {% set modal_id = topic_delete_modal_id %}

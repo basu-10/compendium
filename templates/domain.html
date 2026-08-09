@@ -20,17 +20,20 @@
         {% set delete_title = 'Delete Folder' %}
         {% set delete_message = 'Delete "' ~ node.name ~ '" and everything inside it (sub-folders, topics, statements and uploads)?' %}
         {% set duplicate_url = url_for('duplicate_folder', folder_id=node.id) %}
-        {% include "components/hover_actions.html" with context %}
+        {% if can_edit %}{% include "components/hover_actions.html" with context %}{% endif %}
     </div>
+    {% if node.is_public %}<span class="is-public-badge">Public</span>{% endif %}
     {% if node.description %}<p class="folder-desc">{{ node.description }}</p>{% endif %}
     <div class="folder-meta">
         <span class="stat-count">
             {{ node.statement_count }} Statements &bull; {{ node.attachment_count }} Assets
         </span>
+        {% if can_edit %}
         <span class="folder-actions">
             <button type="button" class="btn-link" onclick="openModal('{{ add_subfolder_modal_id }}')">+ Sub-folder</button>
             <button type="button" class="btn-link" onclick="openModal('{{ add_topic_modal_id }}')">+ Topic</button>
         </span>
+        {% endif %}
     </div>
 
     {% set modal_id = add_topic_modal_id %}
@@ -48,6 +51,7 @@
     {% set folder_id = node.id %}
     {% set current_name = node.name %}
     {% set current_description = node.description or '' %}
+    {% set current_is_public = node.is_public %}
     {% include "modals/edit_folder.html" with context %}
 
     {% set modal_id = folder_delete_modal_id %}
@@ -161,7 +165,7 @@
         <div class="card" onclick="window.location.href='{{ url_for('topic', topic_id=topic.id) }}'">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;">
                 <div style="flex: 1; min-width: 0;">
-                    <h3>{{ topic.name }}</h3>
+                    <h3>{{ topic.name }}{% if topic.is_public %} <span class="is-public-badge">Public</span>{% endif %}</h3>
                     <p>{{ topic.description or 'No description' }}</p>
                     <div class="stat-count">
                         {{ topic.statement_count }} Statements &bull; {{ topic.attachment_count }} Assets
@@ -201,6 +205,7 @@
         </div>
         {% endif %}
 
+        {% if can_edit %}
         <button type="button" class="card card-new" onclick="openModal('{{ add_topic_modal_id }}')"
                 aria-haspopup="dialog" aria-label="Create a new topic in this domain">
             <span class="card-new-icon" aria-hidden="true">+</span>
@@ -218,6 +223,7 @@
                 <span class="card-new-hint">Group topics inside {{ domain.name }}</span>
             </span>
         </button>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

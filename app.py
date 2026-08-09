@@ -1,4 +1,5 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory, jsonify, session, g
+from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import os
 import shutil
@@ -6,7 +7,9 @@ import csv
 import io
 import re
 import uuid
+import secrets
 import hashlib
+import string
 from datetime import datetime
 from bs4 import BeautifulSoup
 import nh3
@@ -19,7 +22,8 @@ import requests
 UNIVER_DATA_PREFIX = 'univer:'
 
 app = Flask(__name__)
-app.secret_key = 'compendium-secret-key-change-in-production'
+# CHANGE THIS before deploying: a stable random secret protects session cookies.
+app.secret_key = os.environ.get('COMPANION_SECRET_KEY', 'compendium-dev-secret-key-change-me')
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max upload
 
@@ -119,15 +123,114 @@ def preview_text(text, limit=PREVIEW_LENGTH):
     return value[:limit].rstrip() + '...'
 
 
-# Placeholder identity used by the sidebar and the dashboard profile header
-# until a real auth layer exists. Defined once so the two render sites cannot
-# drift apart -- they appear on screen together on /dashboard.
-PLACEHOLDER_USER = {
-    'name': 'Alex Rivera',
-    'initials': 'AR',
-    'role': 'Researcher',
-    'email': 'alex@example.com',
-}
+def get_user_by_id(conn, user_id):
+    return conn.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
+
+
+@app.before_request
+def load_logged_in_user():
+    """Populate g.user from the session on every request."""
+    user_id = session.get('user_id')
+    g.user = None
+    if user_id is not None:
+        conn = get_db()
+        try:
+            g.user = get_user_by_id(conn, user_id)
+        finally:
+            conn.close()
+
+
+def login_required(view):
+    """Redirect anonymous visitors to /login, preserving their target."""
+    from functools import wraps
+
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if g.user is None:
+            return redirect(url_for('login', next=request.endpoint))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def is_owner(domain_user_id):
+    """True when the current user owns the domain behind `domain_user_id`."""
+    return g.user is not None and g.user['id'] == domain_user_id
+
+
+def require_domain_owner(conn, domain_id):
+    """Return the domain row if the current user owns it, else None."""
+    if g.user is None:
+        return None
+    domain = conn.execute('SELECT * FROM domains WHERE id = ?', (domain_id,)).fetchone()
+    if domain is None or domain['user_id'] != g.user['id']:
+        return None
+    return domain
+
+
+def require_topic_owner(conn, topic_id):
+    """Return the topic row if the current user owns its domain, else None."""
+    if g.user is None:
+        return None
+    topic = conn.execute(
+        'SELECT t.*, d.user_id FROM topics t JOIN domains d ON t.domain_id = d.id WHERE t.id = ?',
+        (topic_id,),
+    ).fetchone()
+    if topic is None or topic['user_id'] != g.user['id']:
+        return None
+    return topic
+
+
+def require_statement_owner(conn, statement_id):
+    """Return the statement row if the current user owns its domain, else None."""
+    if g.user is None:
+        return None
+    stmt = conn.execute(
+        'SELECT s.*, d.user_id FROM statements s '
+        'JOIN topics t ON s.topic_id = t.id '
+        'JOIN domains d ON t.domain_id = d.id WHERE s.id = ?',
+        (statement_id,),
+    ).fetchone()
+    if stmt is None or stmt['user_id'] != g.user['id']:
+        return None
+    return stmt
+
+
+def visibility_clause():
+    """SQL fragment + params limiting domain rows to what the viewer may see.
+
+    Logged in: own domains OR any domain containing a public topic/folder.
+    Logged out: only domains that contain at least one public topic/folder.
+
+    The domain is reachable publicly when *any* of its topics or folders is
+    marked public, because a public topic always links back to its domain and
+    a public folder is browsable within the domain page.
+    """
+    if g.user is not None:
+        cond = '(d.user_id = ? OR d.id IN (SELECT domain_id FROM topics WHERE is_public = 1) OR d.id IN (SELECT domain_id FROM folders WHERE is_public = 1))'
+        params = [g.user['id']]
+    else:
+        cond = '(d.id IN (SELECT domain_id FROM topics WHERE is_public = 1) OR d.id IN (SELECT domain_id FROM folders WHERE is_public = 1))'
+        params = []
+    return cond, params
+
+
+def owner_username(conn, user_id):
+    """Return the username for a domain owner, or 'unknown'."""
+    if user_id is None:
+        return 'unknown'
+    row = conn.execute('SELECT username FROM users WHERE id = ?', (user_id,)).fetchone()
+    return row['username'] if row else 'unknown'
+
+
+# Random credential generation for the signup page. Kept server-side so the
+# browser never derives secrets from the client clock / Math.random.
+def generate_username():
+    return 'user-' + secrets.token_hex(4)
+
+
+def generate_password(length=14):
+    alphabet = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 
 @app.context_processor
@@ -135,7 +238,8 @@ def inject_globals():
     """Values every template can rely on (e.g. the footer copyright year)."""
     return {
         'current_year': datetime.now().year,
-        'current_user': PLACEHOLDER_USER,
+        'current_user': g.user,
+        'logged_in': g.user is not None,
     }
 
 
@@ -218,10 +322,19 @@ def init_db():
     cursor = conn.cursor()
     
     cursor.executescript('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE TABLE IF NOT EXISTS domains (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
             name TEXT NOT NULL UNIQUE,
-            description TEXT
+            description TEXT,
+            FOREIGN KEY (user_id) REFERENCES users (id)
         );
         
         CREATE TABLE IF NOT EXISTS topics (
@@ -229,6 +342,7 @@ def init_db():
             domain_id INTEGER NOT NULL,
             name TEXT NOT NULL,
             description TEXT,
+            is_public INTEGER NOT NULL DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (domain_id) REFERENCES domains (id)
         );
@@ -258,6 +372,7 @@ def init_db():
             parent_id INTEGER,
             name TEXT NOT NULL,
             description TEXT,
+            is_public INTEGER NOT NULL DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (domain_id) REFERENCES domains (id) ON DELETE CASCADE,
             FOREIGN KEY (parent_id) REFERENCES folders (id) ON DELETE CASCADE
@@ -281,6 +396,9 @@ def init_db():
     _ensure_column(conn, cursor, 'statements', 'position', 'INTEGER DEFAULT 0')
     _ensure_column(conn, cursor, 'attachments', 'position', 'INTEGER DEFAULT 0')
     _ensure_column(conn, cursor, 'attachments', 'tags', 'TEXT')
+    _ensure_column(conn, cursor, 'domains', 'user_id', 'INTEGER')
+    _ensure_column(conn, cursor, 'topics', 'is_public', 'INTEGER DEFAULT 0')
+    _ensure_column(conn, cursor, 'folders', 'is_public', 'INTEGER DEFAULT 0')
     _backfill_positions(conn, cursor, 'statements', 'topic_id')
     _backfill_positions(conn, cursor, 'attachments', 'statement_id')
 
@@ -292,15 +410,27 @@ def init_db():
 
     _migrate_domains(conn, cursor)
 
-    cursor.execute('SELECT COUNT(*) FROM domains')
+    cursor.execute('SELECT COUNT(*) FROM users')
     if cursor.fetchone()[0] == 0:
-        cursor.executemany('INSERT INTO domains (name, description) VALUES (?, ?)', [
-            ('Tech, Engineering & Systems', 'Codebases, software patterns, system architecture, AI implementations.'),
-            ('Quantitative & Data Science', 'Mathematical proofs, statistical models, datasets, algorithmic logic.'),
-            ('Market, Business & Corporate', 'Equity research, 10-K teardowns, macro dynamics, industry analyses.'),
-            ('Empirical & Natural Science', 'Physical/biological scientific studies, experimental evidence, papers.'),
-            ('Policy, Law & Governance', 'Regulatory frameworks, sociopolitical structures, legal documents.'),
-            ('Culture, History & Arts', 'Historical events, literary criticism, media analysis, philosophical texts.')
+        # First run with auth: create the seed owner account and assign all
+        # example domains to it so the existing data is not orphaned.
+        cursor.execute(
+            'INSERT INTO users (username, password_hash) VALUES (?, ?)',
+            ('asesh', generate_password_hash('password@8981724403')),
+        )
+        seed_owner_id = cursor.lastrowid
+    else:
+        seed_owner_id = None
+
+    cursor.execute('SELECT COUNT(*) FROM domains')
+    if cursor.fetchone()[0] == 0 and seed_owner_id is not None:
+        cursor.executemany('INSERT INTO domains (user_id, name, description) VALUES (?, ?, ?)', [
+            (seed_owner_id, 'Tech, Engineering & Systems', 'Codebases, software patterns, system architecture, AI implementations.'),
+            (seed_owner_id, 'Quantitative & Data Science', 'Mathematical proofs, statistical models, datasets, algorithmic logic.'),
+            (seed_owner_id, 'Market, Business & Corporate', 'Equity research, 10-K teardowns, macro dynamics, industry analyses.'),
+            (seed_owner_id, 'Empirical & Natural Science', 'Physical/biological scientific studies, experimental evidence, papers.'),
+            (seed_owner_id, 'Policy, Law & Governance', 'Regulatory frameworks, sociopolitical structures, legal documents.'),
+            (seed_owner_id, 'Culture, History & Arts', 'Historical events, literary criticism, media analysis, philosophical texts.')
         ])
 
     # Index foreign-key child columns so cascade deletes and the per-delete
@@ -465,12 +595,23 @@ def _migrate_domains(conn, cursor):
         ),
     }
 
-    # Ensure each canonical domain exists with its current description.
+    # Ensure each canonical domain exists with its current description. Domains
+    # created by the migration are owned by the seed account so they are never
+    # orphaned (NULL user_id would make them unreachable under per-user scope).
+    cursor.execute('SELECT id FROM users WHERE username = ?', ('asesh',))
+    seed_row = cursor.fetchone()
+    seed_owner_id = seed_row['id'] if seed_row else None
     for name, (description, _legacy) in targets.items():
-        cursor.execute(
-            "INSERT OR IGNORE INTO domains (name, description) VALUES (?, ?)",
-            (name, description),
-        )
+        if seed_owner_id is not None:
+            cursor.execute(
+                "INSERT OR IGNORE INTO domains (user_id, name, description) VALUES (?, ?, ?)",
+                (seed_owner_id, name, description),
+            )
+        else:
+            cursor.execute(
+                "INSERT OR IGNORE INTO domains (name, description) VALUES (?, ?)",
+                (name, description),
+            )
 
     # Map every legacy source domain to its canonical target, then merge topics
     # and drop the legacy row.
@@ -497,14 +638,16 @@ def index():
     """Public marketing landing page."""
     conn = get_db()
     stats = get_global_stats(conn)
-    featured = conn.execute('''
+    vis_cond, vis_params = visibility_clause()
+    featured = conn.execute(f'''
         SELECT d.id, d.name, d.description, COUNT(t.id) as topic_count
         FROM domains d
         LEFT JOIN topics t ON d.id = t.domain_id
+        WHERE {vis_cond}
         GROUP BY d.id
         ORDER BY topic_count DESC, d.name
         LIMIT 3
-    ''').fetchall()
+    ''', vis_params).fetchall()
     conn.close()
     return render_template('landing.html', stats=stats, featured=featured)
 
@@ -518,46 +661,58 @@ def about():
 def all_domains():
     conn = get_db()
     q = request.args.get('q', '').strip()
+    vis_cond, vis_params = visibility_clause()
     if q:
-        domains = conn.execute('''
+        domains = conn.execute(f'''
             SELECT d.*, COUNT(t.id) as topic_count
             FROM domains d
             LEFT JOIN topics t ON d.id = t.domain_id
-            WHERE LOWER(d.name) LIKE LOWER(?) OR LOWER(COALESCE(d.description,'')) LIKE LOWER(?)
+            WHERE ({vis_cond}) AND (LOWER(d.name) LIKE LOWER(?) OR LOWER(COALESCE(d.description,'')) LIKE LOWER(?))
             GROUP BY d.id
             ORDER BY d.name
-        ''', (f"%{q}%", f"%{q}%")).fetchall()
+        ''', vis_params + [f"%{q}%", f"%{q}%"]).fetchall()
     else:
-        domains = conn.execute('''
+        domains = conn.execute(f'''
             SELECT d.*, COUNT(t.id) as topic_count 
             FROM domains d 
             LEFT JOIN topics t ON d.id = t.domain_id 
+            WHERE {vis_cond}
             GROUP BY d.id 
             ORDER BY d.name
-        ''').fetchall()
+        ''', vis_params).fetchall()
     conn.close()
     return render_template('alldomains.html', domains=domains, q=q)
 
 
 @app.route('/dashboard')
+@login_required
 def dashboard():
-    """User profile / dashboard.
-
-    There is no auth layer yet, so the identity block is a placeholder while
-    every figure below it is a real aggregate over the current database.
-    """
+    """Per-user profile / dashboard scoped to the logged-in account's domains."""
     conn = get_db()
-    stats = get_global_stats(conn)
+    uid = g.user['id']
+    stats = conn.execute('''
+        SELECT
+            (SELECT COUNT(*) FROM domains WHERE user_id = ?) AS domain_count,
+            (SELECT COUNT(*) FROM topics t JOIN domains d ON t.domain_id = d.id WHERE d.user_id = ?) AS topic_count,
+            (SELECT COUNT(*) FROM statements s
+               JOIN topics t ON s.topic_id = t.id
+               JOIN domains d ON t.domain_id = d.id WHERE d.user_id = ?) AS statement_count,
+            (SELECT COUNT(*) FROM attachments a
+               JOIN statements s ON a.statement_id = s.id
+               JOIN topics t ON s.topic_id = t.id
+               JOIN domains d ON t.domain_id = d.id WHERE d.user_id = ?) AS attachment_count
+    ''', (uid, uid, uid, uid)).fetchone()
     recent_topics = conn.execute('''
         SELECT t.id, t.name, d.name AS domain_name,
                COUNT(DISTINCT s.id) AS statement_count
         FROM topics t
         JOIN domains d ON t.domain_id = d.id
         LEFT JOIN statements s ON s.topic_id = t.id
+        WHERE d.user_id = ?
         GROUP BY t.id
         ORDER BY t.created_at DESC
         LIMIT 6
-    ''').fetchall()
+    ''', (uid,)).fetchall()
     # The LIMIT is applied before the joins so only six attachment rows are
     # ever joined and sorted; ordering after the join would force a full scan
     # of `attachments` plus a temp b-tree sort on every dashboard load.
@@ -565,15 +720,19 @@ def dashboard():
         SELECT a.title, a.type, a.filename,
                t.id AS topic_id, t.name AS topic_name
         FROM (
-            SELECT id, statement_id, title, type, filename, created_at
-            FROM attachments
-            ORDER BY created_at DESC
+            SELECT a.id, a.statement_id, a.title, a.type, a.filename, a.created_at
+            FROM attachments a
+            JOIN statements s ON a.statement_id = s.id
+            JOIN topics t ON s.topic_id = t.id
+            JOIN domains d ON t.domain_id = d.id
+            WHERE d.user_id = ?
+            ORDER BY a.created_at DESC
             LIMIT 6
         ) a
         JOIN statements s ON a.statement_id = s.id
         JOIN topics t ON s.topic_id = t.id
         ORDER BY a.created_at DESC
-    ''').fetchall()
+    ''', (uid,)).fetchall()
     # Statements and attachments are pre-aggregated per topic so the deepest
     # table is not fanned out across the whole join; counting DISTINCT over
     # the full cross-product made this scale with total attachments rather
@@ -593,9 +752,10 @@ def dashboard():
             LEFT JOIN attachments a ON a.statement_id = s.id
             GROUP BY s.topic_id
         ) ts ON ts.topic_id = t.id
+        WHERE d.user_id = ?
         GROUP BY d.id
         ORDER BY topic_count DESC, d.name
-    ''').fetchall()
+    ''', (uid,)).fetchall()
     conn.close()
     return render_template(
         'dashboard.html',
@@ -614,21 +774,38 @@ def domain(domain_id):
         conn.close()
         flash('Domain not found')
         return redirect(url_for('all_domains'))
+    # Visibility: the owner sees everything; anonymous or other users may only
+    # view the domain when it carries at least one public topic or folder.
+    if not is_owner(domain['user_id']):
+        public = conn.execute(
+            'SELECT 1 FROM topics WHERE domain_id = ? AND is_public = 1 '
+            'UNION ALL SELECT 1 FROM folders WHERE domain_id = ? AND is_public = 1 '
+            'LIMIT 1', (domain_id, domain_id)
+        ).fetchone()
+        if not public:
+            conn.close()
+            flash('You do not have access to this domain')
+            return redirect(url_for('all_domains'))
+    can_edit = is_owner(domain['user_id'])
+    owner_name = owner_username(conn, domain['user_id'])
+    # Non-owners only ever see public topics/folders; the owner sees everything.
+    topic_vis = '' if can_edit else 'AND t.is_public = 1'
+    folder_vis = '' if can_edit else 'AND f.is_public = 1'
     # Topics with no folder (shouldn't happen post-backfill, but keep the page
     # honest if a topic exists with folder_id NULL).
-    loose_topics = conn.execute('''
+    loose_topics = conn.execute(f'''
         SELECT t.*,
                COUNT(DISTINCT s.id) as statement_count,
                COUNT(DISTINCT a.id) as attachment_count
         FROM topics t
         LEFT JOIN statements s ON t.id = s.topic_id
         LEFT JOIN attachments a ON s.id = a.statement_id
-        WHERE t.domain_id = ? AND t.folder_id IS NULL
+        WHERE t.domain_id = ? AND t.folder_id IS NULL {topic_vis}
         GROUP BY t.id
         ORDER BY t.created_at DESC
     ''', (domain_id,)).fetchall()
     folders = conn.execute(
-        'SELECT * FROM folders WHERE domain_id = ? ORDER BY name', (domain_id,)
+        f'SELECT * FROM folders WHERE domain_id = ? {folder_vis} ORDER BY name', (domain_id,)
     ).fetchall()
     q = request.args.get('q', '').strip()
     if q:
@@ -688,6 +865,8 @@ def domain(domain_id):
         folder_tree=folder_tree,
         all_folders=all_folders,
         loose_topics=loose_topics,
+        can_edit=can_edit,
+        owner_username=owner_name,
         q=q,
     )
 
@@ -695,11 +874,19 @@ def domain(domain_id):
 def topic(topic_id):
     conn = get_db()
     topic = conn.execute('''
-        SELECT t.*, d.name as domain_name 
+        SELECT t.*, d.name as domain_name, d.user_id as domain_user_id
         FROM topics t 
         JOIN domains d ON t.domain_id = d.id 
         WHERE t.id = ?
     ''', (topic_id,)).fetchone()
+    # Access: owner sees it; everyone else only when the topic is public.
+    if topic and not is_owner(topic['domain_user_id']):
+        if not topic['is_public']:
+            conn.close()
+            flash('This topic is private')
+            return redirect(url_for('all_domains'))
+    can_edit = topic is not None and is_owner(topic['domain_user_id'])
+    owner_name = owner_username(conn, topic['domain_user_id']) if topic else 'unknown'
     # Walk the folder's ancestor chain (parent_id upward) to build the breadcrumb
     # path domain › … › folder. Computed here so the template only renders it.
     folder_path = []
@@ -824,9 +1011,12 @@ def topic(topic_id):
         CONTENT_ONLY_TYPES=CONTENT_ONLY_TYPES,
         q=q,
         active_statement_id=active_statement_id,
+        can_edit=can_edit,
+        owner_username=owner_name,
     )
 
 @app.route('/create_topic', methods=['POST'])
+@login_required
 def create_topic():
     domain_id = request.form.get('domain_id')
     name = request.form.get('name', '').strip()
@@ -836,6 +1026,11 @@ def create_topic():
         flash('Domain and topic name are required')
         return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
+    domain = require_domain_owner(conn, domain_id)
+    if not domain:
+        conn.close()
+        flash('You do not have access to this domain')
+        return redirect(url_for('all_domains'))
     # Validate any supplied folder belongs to this domain (topics.domain_id has
     # no declared FK to folders, so ownership is checked here in app code).
     if folder_id:
@@ -855,6 +1050,7 @@ def create_topic():
     return redirect(url_for('topic', topic_id=topic_id))
 
 @app.route('/create_folder', methods=['POST'])
+@login_required
 def create_folder():
     domain_id = request.form.get('domain_id')
     name = request.form.get('name', '').strip()
@@ -864,7 +1060,7 @@ def create_folder():
         flash('Domain and folder name are required')
         return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
-    domain = conn.execute('SELECT id FROM domains WHERE id = ?', (domain_id,)).fetchone()
+    domain = require_domain_owner(conn, domain_id)
     if not domain:
         conn.close()
         flash('Domain not found')
@@ -886,17 +1082,19 @@ def create_folder():
     return redirect(url_for('domain', domain_id=domain_id))
 
 @app.route('/update_folder', methods=['POST'])
+@login_required
 def update_folder():
     folder_id = request.form.get('folder_id')
     name = request.form.get('name', '').strip()
     description = request.form.get('description', '').strip()
     parent_id = request.form.get('parent_id') or None
+    is_public = 1 if request.form.get('is_public') else 0
     if not folder_id or not name:
         flash('Folder name is required')
         return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
-    folder = conn.execute('SELECT * FROM folders WHERE id = ?', (folder_id,)).fetchone()
-    if not folder:
+    folder = conn.execute('SELECT f.*, d.user_id FROM folders f JOIN domains d ON f.domain_id = d.id WHERE f.id = ?', (folder_id,)).fetchone()
+    if not folder or folder['user_id'] != g.user['id']:
         conn.close()
         flash('Folder not found')
         return redirect(request.referrer or url_for('all_domains'))
@@ -932,18 +1130,19 @@ def update_folder():
             flash('Cannot move a folder into one of its own sub-folders')
             return redirect(url_for('domain', domain_id=folder['domain_id']))
     conn.execute(
-        'UPDATE folders SET name = ?, description = ?, parent_id = ? WHERE id = ?',
-        (name, description, parent_id, folder_id),
+        'UPDATE folders SET name = ?, description = ?, parent_id = ?, is_public = ? WHERE id = ?',
+        (name, description, parent_id, is_public, folder_id),
     )
     conn.commit()
     conn.close()
     return redirect(url_for('domain', domain_id=folder['domain_id']))
 
 @app.route('/delete_folder/<int:folder_id>', methods=['POST'])
+@login_required
 def delete_folder(folder_id):
     conn = get_db()
-    folder = conn.execute('SELECT * FROM folders WHERE id = ?', (folder_id,)).fetchone()
-    if not folder:
+    folder = conn.execute('SELECT f.*, d.user_id FROM folders f JOIN domains d ON f.domain_id = d.id WHERE f.id = ?', (folder_id,)).fetchone()
+    if not folder or folder['user_id'] != g.user['id']:
         conn.close()
         flash('Folder not found')
         return redirect(request.referrer or url_for('all_domains'))
@@ -977,6 +1176,7 @@ def delete_folder(folder_id):
     return redirect(url_for('domain', domain_id=domain_id))
 
 @app.route('/create_statement', methods=['POST'])
+@login_required
 def create_statement():
     topic_id = request.form.get('topic_id')
     text = request.form.get('text', '').strip()
@@ -984,12 +1184,18 @@ def create_statement():
         flash('Statement text is required')
         return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
+    topic = require_topic_owner(conn, topic_id)
+    if not topic:
+        conn.close()
+        flash('Topic not found')
+        return redirect(request.referrer or url_for('all_domains'))
     conn.execute('INSERT INTO statements (topic_id, text, position) VALUES (?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM statements WHERE topic_id = ?))', (topic_id, text, topic_id))
     conn.commit()
     conn.close()
     return redirect(url_for('topic', topic_id=topic_id))
 
 @app.route('/create_attachment', methods=['POST'])
+@login_required
 def create_attachment():
     # The smart attach modal never asks the user for a type; we infer it from
     # whatever they provided (an uploaded file's extension, a URL, or free
@@ -1002,6 +1208,11 @@ def create_attachment():
 
     if not statement_id:
         flash('Statement is required')
+        return redirect(request.referrer or url_for('all_domains'))
+    stmt = require_statement_owner(conn, statement_id)
+    if not stmt:
+        conn.close()
+        flash('Statement not found')
         return redirect(request.referrer or url_for('all_domains'))
 
     source_name = (file.filename if file and file.filename else '') or ''
@@ -1272,6 +1483,7 @@ def _table_to_univer_csv(filename, ext):
     return None
 
 @app.route('/upload_drop/<int:statement_id>', methods=['POST'])
+@login_required
 def upload_drop(statement_id):
     """Receive files dropped onto a statement's asset section.
 
@@ -1282,7 +1494,7 @@ def upload_drop(statement_id):
     to the original filename; both mirror create_attachment's validation.
     """
     conn = get_db()
-    statement = conn.execute('SELECT id FROM statements WHERE id = ?', (statement_id,)).fetchone()
+    statement = require_statement_owner(conn, statement_id)
     if not statement:
         conn.close()
         return {'error': 'Statement not found'}, 404
@@ -1377,6 +1589,7 @@ def upload_drop(statement_id):
     return {'results': results}
 
 @app.route('/update_statement', methods=['POST'])
+@login_required
 def update_statement():
     statement_id = request.form.get('statement_id')
     text = request.form.get('text', '').strip()
@@ -1384,12 +1597,18 @@ def update_statement():
         flash('Statement text is required')
         return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
+    stmt = require_statement_owner(conn, statement_id)
+    if not stmt:
+        conn.close()
+        flash('Statement not found')
+        return redirect(request.referrer or url_for('all_domains'))
     conn.execute('UPDATE statements SET text = ? WHERE id = ?', (text, statement_id))
     conn.commit()
     conn.close()
     return redirect(request.referrer or url_for('all_domains'))
 
 @app.route('/reorder_statements/<int:topic_id>', methods=['POST'])
+@login_required
 def reorder_statements(topic_id):
     # Receives the full ordered list of statement ids for the topic; each is
     # assigned a sequential position so the new order is authoritative.
@@ -1397,6 +1616,11 @@ def reorder_statements(topic_id):
     if not ordered:
         return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
+    topic = require_topic_owner(conn, topic_id)
+    if not topic:
+        conn.close()
+        flash('Topic not found')
+        return redirect(request.referrer or url_for('all_domains'))
     try:
         conn.executemany(
             'UPDATE statements SET position = ? WHERE id = ? AND topic_id = ?',
@@ -1412,12 +1636,18 @@ def reorder_statements(topic_id):
     return redirect(request.referrer or url_for('all_domains'))
 
 @app.route('/reorder_attachments/<int:statement_id>', methods=['POST'])
+@login_required
 def reorder_attachments(statement_id):
     # Like reorder_statements but scoped to one statement's assets.
     ordered = request.form.getlist('order')
     if not ordered:
         return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
+    stmt = require_statement_owner(conn, statement_id)
+    if not stmt:
+        conn.close()
+        flash('Statement not found')
+        return redirect(request.referrer or url_for('all_domains'))
     try:
         conn.executemany(
             'UPDATE attachments SET position = ? WHERE id = ? AND statement_id = ?',
@@ -1433,8 +1663,14 @@ def reorder_attachments(statement_id):
     return redirect(request.referrer or url_for('all_domains'))
 
 @app.route('/delete_statement/<int:statement_id>', methods=['POST'])
+@login_required
 def delete_statement(statement_id):
     conn = get_db()
+    stmt = require_statement_owner(conn, statement_id)
+    if not stmt:
+        conn.close()
+        flash('Statement not found')
+        return redirect(request.referrer or url_for('all_domains'))
     # Collect files before the cascade removes the rows that reference them.
     rows = conn.execute(
         'SELECT filename FROM attachments WHERE statement_id = ? AND filename IS NOT NULL',
@@ -1463,6 +1699,7 @@ def delete_statement(statement_id):
     return redirect_to_topic_referrer(topic_id, next_stmt)
 
 @app.route('/update_attachment', methods=['POST'])
+@login_required
 def update_attachment():
     attachment_id = request.form.get('attachment_id')
     title = request.form.get('title', '').strip()
@@ -1476,8 +1713,8 @@ def update_attachment():
         return redirect(request.referrer or url_for('all_domains'))
 
     conn = get_db()
-    existing = conn.execute('SELECT * FROM attachments WHERE id = ?', (attachment_id,)).fetchone()
-    if not existing:
+    existing = conn.execute('SELECT a.*, d.user_id FROM attachments a JOIN statements s ON a.statement_id = s.id JOIN topics t ON s.topic_id = t.id JOIN domains d ON t.domain_id = d.id WHERE a.id = ?', (attachment_id,)).fetchone()
+    if not existing or existing['user_id'] != g.user['id']:
         conn.close()
         flash('Attachment not found')
         return redirect(request.referrer or url_for('all_domains'))
@@ -1551,11 +1788,19 @@ def update_attachment():
 
 
 @app.route('/delete_attachment/<int:attachment_id>', methods=['POST'])
+@login_required
 def delete_attachment(attachment_id):
     conn = get_db()
     row = conn.execute(
-        'SELECT filename, statement_id FROM attachments WHERE id = ?', (attachment_id,)
+        'SELECT a.filename, a.statement_id, d.user_id FROM attachments a '
+        'JOIN statements s ON a.statement_id = s.id '
+        'JOIN topics t ON s.topic_id = t.id '
+        'JOIN domains d ON t.domain_id = d.id WHERE a.id = ?', (attachment_id,)
     ).fetchone()
+    if not row or row['user_id'] != g.user['id']:
+        conn.close()
+        flash('Attachment not found')
+        return redirect(request.referrer or url_for('all_domains'))
     statement_id = row['statement_id'] if row else None
     conn.execute('DELETE FROM attachments WHERE id = ?', (attachment_id,))
     conn.commit()
@@ -1878,6 +2123,7 @@ def api_scrape_preview():
 
 
 @app.route('/api/capture', methods=['POST'])
+@login_required
 def api_capture():
     """Capture a webpage: readability → sanitize → rehost images → save as richtext attachment."""
     data = request.get_json(silent=True) or {}
@@ -1889,6 +2135,12 @@ def api_capture():
 
     if not statement_id or not url:
         return jsonify({'ok': False, 'error': 'statement_id and url are required'}), 400
+
+    conn = get_db()
+    stmt = require_statement_owner(conn, statement_id)
+    if not stmt:
+        conn.close()
+        return jsonify({'ok': False, 'error': 'statement not found'}), 404
 
     # The browser extension supplies the page's raw HTML; when called from the
     # on-site scrape tab we only have the URL, so fetch it server-side.
@@ -1902,7 +2154,6 @@ def api_capture():
 
     source_title, composed = _build_capture(title, url, html)
     # 5. Insert as richtext attachment with source_url
-    conn = get_db()
     try:
         conn.execute(
             'INSERT INTO attachments (statement_id, title, type, content, filename, tags, source_url, position) '
@@ -1921,6 +2172,7 @@ def api_capture():
 
 
 @app.route('/save_table/<int:attachment_id>', methods=['POST'])
+@login_required
 def save_table(attachment_id):
     """Persist an in-browser Univer edit back to the attachment.
 
@@ -1930,8 +2182,8 @@ def save_table(attachment_id):
     file-backed asset. A stored file is removed on disk once superseded.
     """
     conn = get_db()
-    existing = conn.execute('SELECT * FROM attachments WHERE id = ?', (attachment_id,)).fetchone()
-    if not existing:
+    existing = conn.execute('SELECT a.*, d.user_id FROM attachments a JOIN statements s ON a.statement_id = s.id JOIN topics t ON s.topic_id = t.id JOIN domains d ON t.domain_id = d.id WHERE a.id = ?', (attachment_id,)).fetchone()
+    if not existing or existing['user_id'] != g.user['id']:
         conn.close()
         return jsonify({'error': 'not found'}), 404
 
@@ -2027,6 +2279,7 @@ def build_folder_tree(conn, folders):
             'parent_id': f['parent_id'],
             'name': f['name'],
             'description': f['description'],
+            'is_public': f['is_public'],
             'children': [],
             'topics': [],
             'statement_count': 0,
@@ -2146,11 +2399,12 @@ def _copy_topic(conn, src_topic, new_folder_id=None):
 
 
 @app.route('/move_topic', methods=['POST'])
+@login_required
 def move_topic():
     topic_id = request.form.get('topic_id')
     folder_id = request.form.get('folder_id') or None
     conn = get_db()
-    topic = conn.execute('SELECT * FROM topics WHERE id = ?', (topic_id,)).fetchone()
+    topic = require_topic_owner(conn, topic_id)
     if not topic:
         conn.close()
         flash('Topic not found')
@@ -2174,6 +2428,7 @@ def move_topic():
 
 
 @app.route('/move_statement/<int:statement_id>', methods=['POST'])
+@login_required
 def move_statement(statement_id):
     """Re-parent a statement under a *different topic* in the SAME domain.
 
@@ -2188,7 +2443,7 @@ def move_statement(statement_id):
     """
     to_topic_id = request.form.get('to_topic_id')
     conn = get_db()
-    stmt = conn.execute('SELECT * FROM statements WHERE id = ?', (statement_id,)).fetchone()
+    stmt = require_statement_owner(conn, statement_id)
     if not stmt:
         conn.close()
         flash('Statement not found')
@@ -2222,6 +2477,7 @@ def move_statement(statement_id):
 
 
 @app.route('/move_attachment/<int:attachment_id>', methods=['POST'])
+@login_required
 def move_attachment(attachment_id):
     """Re-assign an asset to a *different statement* in the SAME topic.
 
@@ -2235,8 +2491,8 @@ def move_attachment(attachment_id):
     """
     to_statement_id = request.form.get('to_statement_id')
     conn = get_db()
-    att = conn.execute('SELECT * FROM attachments WHERE id = ?', (attachment_id,)).fetchone()
-    if not att:
+    att = conn.execute('SELECT a.*, d.user_id FROM attachments a JOIN statements s ON a.statement_id = s.id JOIN topics t ON s.topic_id = t.id JOIN domains d ON t.domain_id = d.id WHERE a.id = ?', (attachment_id,)).fetchone()
+    if not att or att['user_id'] != g.user['id']:
         conn.close()
         flash('Asset not found')
         return redirect(request.referrer or url_for('all_domains'))
@@ -2271,9 +2527,10 @@ def move_attachment(attachment_id):
 
 
 @app.route('/duplicate_topic/<int:topic_id>', methods=['POST'])
+@login_required
 def duplicate_topic(topic_id):
     conn = get_db()
-    topic = conn.execute('SELECT * FROM topics WHERE id = ?', (topic_id,)).fetchone()
+    topic = require_topic_owner(conn, topic_id)
     if not topic:
         conn.close()
         flash('Topic not found')
@@ -2292,9 +2549,10 @@ def duplicate_topic(topic_id):
 
 
 @app.route('/duplicate_statement/<int:statement_id>', methods=['POST'])
+@login_required
 def duplicate_statement(statement_id):
     conn = get_db()
-    stmt = conn.execute('SELECT * FROM statements WHERE id = ?', (statement_id,)).fetchone()
+    stmt = require_statement_owner(conn, statement_id)
     if not stmt:
         conn.close()
         flash('Statement not found')
@@ -2328,10 +2586,11 @@ def duplicate_statement(statement_id):
 
 
 @app.route('/duplicate_attachment/<int:attachment_id>', methods=['POST'])
+@login_required
 def duplicate_attachment(attachment_id):
     conn = get_db()
-    att = conn.execute('SELECT * FROM attachments WHERE id = ?', (attachment_id,)).fetchone()
-    if not att:
+    att = conn.execute('SELECT a.*, d.user_id FROM attachments a JOIN statements s ON a.statement_id = s.id JOIN topics t ON s.topic_id = t.id JOIN domains d ON t.domain_id = d.id WHERE a.id = ?', (attachment_id,)).fetchone()
+    if not att or att['user_id'] != g.user['id']:
         conn.close()
         flash('Asset not found')
         return redirect(request.referrer or url_for('all_domains'))
@@ -2365,10 +2624,11 @@ def duplicate_attachment(attachment_id):
 
 
 @app.route('/duplicate_folder/<int:folder_id>', methods=['POST'])
+@login_required
 def duplicate_folder(folder_id):
     conn = get_db()
-    folder = conn.execute('SELECT * FROM folders WHERE id = ?', (folder_id,)).fetchone()
-    if not folder:
+    folder = conn.execute('SELECT f.*, d.user_id FROM folders f JOIN domains d ON f.domain_id = d.id WHERE f.id = ?', (folder_id,)).fetchone()
+    if not folder or folder['user_id'] != g.user['id']:
         conn.close()
         flash('Folder not found')
         return redirect(request.referrer or url_for('all_domains'))
@@ -2407,22 +2667,35 @@ def duplicate_folder(folder_id):
 
 
 @app.route('/update_topic', methods=['POST'])
+@login_required
 def update_topic():
     topic_id = request.form.get('topic_id')
     name = request.form.get('name', '').strip()
     description = request.form.get('description', '').strip()
+    is_public = 1 if request.form.get('is_public') else 0
     if not topic_id or not name:
         flash('Topic name is required')
         return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
-    conn.execute('UPDATE topics SET name = ?, description = ? WHERE id = ?', (name, description, topic_id))
+    topic = conn.execute('SELECT t.*, d.user_id FROM topics t JOIN domains d ON t.domain_id = d.id WHERE t.id = ?', (topic_id,)).fetchone()
+    if not topic or topic['user_id'] != g.user['id']:
+        conn.close()
+        flash('Topic not found')
+        return redirect(request.referrer or url_for('all_domains'))
+    conn.execute('UPDATE topics SET name = ?, description = ?, is_public = ? WHERE id = ?', (name, description, is_public, topic_id))
     conn.commit()
     conn.close()
     return redirect(request.referrer or url_for('all_domains'))
 
 @app.route('/delete_topic/<int:topic_id>', methods=['POST'])
+@login_required
 def delete_topic(topic_id):
     conn = get_db()
+    topic = require_topic_owner(conn, topic_id)
+    if not topic:
+        conn.close()
+        flash('Topic not found')
+        return redirect(request.referrer or url_for('all_domains'))
     # Collect files before the cascade removes the rows that reference them.
     rows = conn.execute('''
         SELECT a.filename FROM attachments a
@@ -2437,6 +2710,7 @@ def delete_topic(topic_id):
     return redirect(request.referrer or url_for('all_domains'))
 
 @app.route('/update_domain', methods=['POST'])
+@login_required
 def update_domain():
     domain_id = request.form.get('domain_id')
     name = request.form.get('name', '').strip()
@@ -2445,14 +2719,25 @@ def update_domain():
         flash('Domain name is required')
         return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
+    domain = require_domain_owner(conn, domain_id)
+    if not domain:
+        conn.close()
+        flash('Domain not found')
+        return redirect(request.referrer or url_for('all_domains'))
     conn.execute('UPDATE domains SET name = ?, description = ? WHERE id = ?', (name, description, domain_id))
     conn.commit()
     conn.close()
     return redirect(request.referrer or url_for('all_domains'))
 
 @app.route('/delete_domain/<int:domain_id>', methods=['POST'])
+@login_required
 def delete_domain(domain_id):
     conn = get_db()
+    domain = require_domain_owner(conn, domain_id)
+    if not domain:
+        conn.close()
+        flash('Domain not found')
+        return redirect(request.referrer or url_for('all_domains'))
     # `topics.domain_id` has no ON DELETE CASCADE, so with foreign keys enabled
     # the children must be removed explicitly or the delete is rejected.
     rows = conn.execute('''
@@ -2477,6 +2762,114 @@ def uploaded_file(filename):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['Content-Security-Policy'] = "default-src 'none'; sandbox"
     return response
+
+
+# ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+
+@app.route('/signup')
+def signup():
+    # Pre-fill with server-generated credentials the user may keep or overwrite.
+    return render_template(
+        'signup.html',
+        suggested_username=generate_username(),
+        suggested_password=generate_password(),
+        next=request.args.get('next', ''),
+    )
+
+
+@app.route('/signup/regenerate')
+def signup_regenerate():
+    # JSON endpoint so the "regenerate" button can fetch fresh suggestions
+    # without a full page reload (keeps creds server-generated).
+    return jsonify({'username': generate_username(), 'password': generate_password()})
+
+
+@app.route('/login')
+def login():
+    if g.user is not None:
+        return redirect(url_for('dashboard'))
+    return render_template('login.html', next=request.args.get('next', ''))
+
+
+@app.route('/auth', methods=['POST'])
+def auth():
+    """Single create-or-login action used by both the signup and login forms.
+
+    If the username does not yet exist it is created (hashed password) and the
+    new account is logged in. If it exists the password is checked and, on
+    match, the account is logged in. One button ("Create & Login" / "Login")
+    drives both flows; the form submits natively so the browser password
+    manager can offer to save the credentials.
+    """
+    username = (request.form.get('username') or '').strip()
+    password = request.form.get('password') or ''
+    next_page = request.form.get('next') or request.args.get('next') or ''
+    if not username or not password:
+        flash('Username and password are required')
+        return redirect(url_for('login', next=next_page))
+
+    conn = get_db()
+    user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+    if user is None:
+        # New account: create it.
+        conn.execute(
+            'INSERT INTO users (username, password_hash) VALUES (?, ?)',
+            (username, generate_password_hash(password)),
+        )
+        conn.commit()
+        user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+    else:
+        if not check_password_hash(user['password_hash'], password):
+            conn.close()
+            flash('Incorrect password')
+            return redirect(url_for('login', next=next_page))
+
+    conn.close()
+    session.clear()
+    session['user_id'] = user['id']
+    if next_page:
+        return redirect(url_for(next_page))
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('index'))
+
+
+# ---------------------------------------------------------------------------
+# Public discovery
+# ---------------------------------------------------------------------------
+
+@app.route('/public')
+def public_directory():
+    """Global directory of every user's public topics and folders."""
+    conn = get_db()
+    # Public topics with their owning domain and owner username.
+    topics = conn.execute('''
+        SELECT t.id, t.name, t.description, d.id AS domain_id, d.name AS domain_name,
+               u.username AS owner_username
+        FROM topics t
+        JOIN domains d ON t.domain_id = d.id
+        JOIN users u ON d.user_id = u.id
+        WHERE t.is_public = 1
+        ORDER BY t.created_at DESC
+    ''').fetchall()
+    # Public folders (containers); their public child topics are shown via /topic.
+    folders = conn.execute('''
+        SELECT f.id, f.name, f.description, d.id AS domain_id, d.name AS domain_name,
+               u.username AS owner_username
+        FROM folders f
+        JOIN domains d ON f.domain_id = d.id
+        JOIN users u ON d.user_id = u.id
+        WHERE f.is_public = 1
+        ORDER BY f.name
+    ''').fetchall()
+    conn.close()
+    return render_template('public.html', topics=topics, folders=folders)
 
 if __name__ == '__main__':
     init_db()

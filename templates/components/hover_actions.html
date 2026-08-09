@@ -1,7 +1,12 @@
 {# Reusable hover action toolbar.
 
    All actions, including delete, are available directly from the toolbar on
-   hover/focus. Delete is confirmed through a modal before anything happens. #}
+   hover/focus. Delete is confirmed through a modal before anything happens.
+
+   When `can_edit` is explicitly false (read-only / other user's public
+   content) the toolbar is suppressed entirely; write routes are still
+   server-guarded as a backstop. #}
+{% if can_edit is not sameas false %}
 <div class="hover-actions">
     {% if edit_url %}
     <button type="button" class="icon-btn edit-btn" data-edit-modal="{{ edit_modal_id }}" onclick="openModal('{{ edit_modal_id }}'); event.stopPropagation();" title="Edit" aria-label="Edit">✎</button>
@@ -23,3 +28,4 @@
     </form>
     {% endif %}
 </div>
+{% endif %}

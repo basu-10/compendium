@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Log In - Compendium{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+    <div class="auth-card">
+        <h1 class="auth-title">Welcome back</h1>
+        <p class="auth-sub">Log in with your username and password.</p>
+
+        <form id="auth-form" method="POST" action="{{ url_for('auth') }}" autocomplete="on">
+            <input type="hidden" name="next" value="{{ next }}">
+
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" autocomplete="username" required>
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" autocomplete="current-password" required>
+            </div>
+
+            <div class="form-actions auth-actions">
+                <button type="submit" class="btn-primary">Login</button>
+                <a href="{{ url_for('signup', next=next) }}" class="btn-link">New here? Create an account</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

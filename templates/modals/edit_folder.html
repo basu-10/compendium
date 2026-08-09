@@ -11,6 +11,10 @@
         <label for="edit-folder-desc-{{ folder_id }}">Description</label>
         <textarea id="edit-folder-desc-{{ folder_id }}" name="description">{{ current_description }}</textarea>
     </div>
+    <label class="checkbox-row">
+        <input type="checkbox" name="is_public" id="edit-public-{{ folder_id }}" {% if current_is_public %}checked{% endif %}>
+        Make this folder public (visible in the public directory)
+    </label>
     <div class="form-actions">
         <button type="submit" class="btn-primary">Save Changes</button>
         <button type="button" class="btn-secondary" onclick="closeModal('{{ modal_id }}')">Cancel</button>

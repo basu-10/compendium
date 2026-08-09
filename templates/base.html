@@ -63,9 +63,14 @@
                 <a href="{{ url_for('all_domains') }}" class="sidebar-link {% if request.endpoint in ['all_domains', 'domain', 'topic'] %}active{% endif %}">
                     <span class="sidebar-icon">&#9632;</span> All Domains
                 </a>
+                <a href="{{ url_for('public_directory') }}" class="sidebar-link {% if request.endpoint == 'public_directory' %}active{% endif %}">
+                    <span class="sidebar-icon">&#9632;</span> Public
+                </a>
+                {% if logged_in %}
                 <a href="{{ url_for('dashboard') }}" class="sidebar-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
                     <span class="sidebar-icon">&#9632;</span> Dashboard
                 </a>
+                {% endif %}
                 <a href="{{ url_for('about') }}" class="sidebar-link">
                     <span class="sidebar-icon">&#9632;</span> About
                 </a>
@@ -76,13 +81,24 @@
                     <button class="icon-btn" title="Notifications">&#128276;</button>
                     <button class="btn-export">Export</button>
                 </div>
+                {% if logged_in %}
                 <a href="{{ url_for('dashboard') }}" class="sidebar-user">
-                    <div class="sidebar-avatar">{{ current_user.initials }}</div>
+                    <div class="sidebar-avatar">{{ current_user.username[:2]|upper }}</div>
                     <div class="sidebar-user-meta">
-                        <div class="sidebar-user-name">{{ current_user.name }}</div>
-                        <div class="sidebar-user-role">{{ current_user.role }}</div>
+                        <div class="sidebar-user-name">{{ current_user.username }}</div>
+                        <div class="sidebar-user-role">Member</div>
                     </div>
                 </a>
+                <a href="{{ url_for('logout') }}" class="sidebar-logout">Log out</a>
+                {% else %}
+                <a href="{{ url_for('login') }}" class="sidebar-user">
+                    <div class="sidebar-avatar">?</div>
+                    <div class="sidebar-user-meta">
+                        <div class="sidebar-user-name">Guest</div>
+                        <div class="sidebar-user-role">Log in / Sign up</div>
+                    </div>
+                </a>
+                {% endif %}
             </div>
         </aside>
 

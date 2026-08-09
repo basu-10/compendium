@@ -1,3 +1,11 @@
+// Whether the current viewer may edit this topic. Driven by the server via a
+// data attribute so the client can suppress add/edit affordances on read-only
+// (public, other-user) views. Write routes are still server-guarded regardless.
+const CAN_EDIT = (function() {
+    const el = document.querySelector('.topic');
+    return !!el && el.getAttribute('data-can-edit') === '1';
+})();
+
 // --- In-page topic search ---
 // Wire the existing (inert) pane-search box to a server-side ?q= reload. A
 // debounce avoids a request on every keystroke; Enter submits immediately. The
@@ -262,6 +270,7 @@ function buildAddStatementTile() {
     const slot = document.getElementById('add-statement-slot');
     if (!slot) return;
     slot.innerHTML = '';
+    if (!CAN_EDIT) return;
 
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -833,8 +842,9 @@ function showEvidence(statementId) {
 
     // The "add evidence" tile always trails the cards and targets whichever
     // statement is selected, so it doubles as the empty state for a statement
-    // that has no evidence yet.
-    container.appendChild(buildAddEvidenceCard(statementId, items.length === 0));
+    // that has no evidence yet. Suppressed on read-only views.
+    const addCard = buildAddEvidenceCard(statementId, items.length === 0);
+    if (addCard) container.appendChild(addCard);
 
     // Reflect the selected statement in the pane title and keep its assets
     // reorderable after the cards are rebuilt client-side.
@@ -846,6 +856,7 @@ function showEvidence(statementId) {
 }
 
 function buildAddEvidenceCard(statementId, isEmpty) {
+    if (!CAN_EDIT) return null;
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'add-card';

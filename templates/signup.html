@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Sign Up - Compendium{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+    <div class="auth-card">
+        <h1 class="auth-title">Create your account</h1>
+        <p class="auth-sub">We've generated a username and password for you. Keep them or choose your own, then create &amp; log in.</p>
+
+        <form id="auth-form" method="POST" action="{{ url_for('auth') }}" autocomplete="on">
+            <input type="hidden" name="next" value="{{ next }}">
+
+            <div class="form-group">
+                <label for="username">Username</label>
+                <div class="input-with-button">
+                    <input type="text" id="username" name="username" value="{{ suggested_username|e }}" autocomplete="username" required>
+                    <button type="button" class="btn-secondary btn-sm" id="regen-username">Regenerate</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <div class="input-with-button">
+                    <input type="password" id="password" name="password" value="{{ suggested_password|e }}" autocomplete="new-password" required>
+                    <button type="button" class="btn-secondary btn-sm" id="regen-password">Regenerate</button>
+                </div>
+                <label class="checkbox-row">
+                    <input type="checkbox" id="show-password"> Show password
+                </label>
+            </div>
+
+            <div class="form-actions auth-actions">
+                <button type="submit" class="btn-primary">Create &amp; Login</button>
+                <a href="{{ url_for('login', next=next) }}" class="btn-link">Already have an account? Log in</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    // The "regenerate" buttons fetch fresh server-generated creds so they are
+    // never derived client-side (keeps them unpredictable). The form keeps its
+    // native submit so the browser password manager can save the result.
+    function regenerate(field) {
+        fetch("{{ url_for('signup_regenerate') }}")
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (field === 'username') {
+                    document.getElementById('username').value = data.username;
+                } else {
+                    document.getElementById('password').value = data.password;
+                }
+            });
+    }
+    document.getElementById('regen-username').addEventListener('click', function () { regenerate('username'); });
+    document.getElementById('regen-password').addEventListener('click', function () { regenerate('password'); });
+    document.getElementById('show-password').addEventListener('change', function (e) {
+        document.getElementById('password').type = e.target.checked ? 'text' : 'password';
+    });
+</script>
+{% endblock %}

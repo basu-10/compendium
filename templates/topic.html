@@ -91,6 +91,9 @@
                         {% set attach_modal_id = attach_modal_id %}
                         {% set attach_url = url_for('create_attachment') %}
                         {% set duplicate_url = url_for('duplicate_statement', statement_id=statement.id) %}
+                        {% set stmt_move_modal_id = 'move-statement-' ~ statement.id %}
+                        {% set move_url = url_for('move_statement', statement_id=statement.id) %}
+                        {% set move_modal_id = stmt_move_modal_id %}
                         {% include "components/hover_actions.html" with context %}
 
                         {% set summary = evidence_summary(attachments_by_statement.get(statement.id)) %}
@@ -160,6 +163,12 @@
         {% set title = 'Delete Statement' %}
         {% set message = 'Are you sure you want to delete this statement and its attachments?' %}
         {% include "modals/confirm_delete.html" with context %}
+
+        {% set modal_id = 'move-statement-' ~ statement.id %}
+        {% set statement_id = statement.id %}
+        {% set current_topic_id = topic.id %}
+        {% set move_topics = domain_topics %}
+        {% include "modals/move_statement.html" with context %}
     {% endfor %}
 
     {# Edit modals for every attachment on the page. The evidence cards' edit
@@ -181,6 +190,14 @@
     {% set message = 'Are you sure you want to delete this asset?' %}
     {% set delete_url = '' %}
     {% include "modals/confirm_delete.html" with context %}
+
+    {# One shared "Move asset" modal for all evidence cards; the move button sets
+       the attachment id and the asset's current statement before opening, then
+       the <select> lets the user pick another statement in THIS topic. See
+       README "Move semantics". #}
+    {% set modal_id = 'move-attachment' %}
+    {% set move_statements = statements %}
+    {% include "modals/move_attachment.html" with context %}
 
     {% set modal_id = topic_edit_modal_id %}
     {% set topic_id = topic.id %}

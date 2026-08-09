@@ -1,15 +1,17 @@
 # Compendium
 
 **Compendium** is a Flask web application for organizing knowledge into a structured
-evidence map. It groups information into three nested levels — **domains → topics →
-statements** — where every statement can carry supporting **attachments** (links,
-documents, images, videos, text, rich text, and tables). The UI is a clean, single-page
-style dashboard with a collapsible sidebar and breadcrumb navigation.
+evidence map. It groups information into five nested levels —
+**domains → folders → topics → statements → attachments** — where every statement can
+carry supporting **attachments** (links, documents, images, videos, text, rich text, and
+tables). The UI is a clean, single-page style dashboard with a collapsible sidebar and
+breadcrumb navigation.
 
 ## Features
 
-- **Hierarchical organization**: Domains contain topics, topics contain statements, and
-  statements hold attachments — a clean model for claims and their supporting evidence.
+- **Hierarchical organization**: Domains contain folders, folders contain topics, topics
+  contain statements, and statements hold attachments — a clean model for claims and their
+  supporting evidence.
 - **Rich attachment types**: `link`, `document`, `image`, `video`, `text`, `richtext`,
   and `table` (CSV/TSV/XLS/XLSX/ODS uploads render inline as tables).
 - **File uploads** with a strict per-type extension allowlist (100 MB max) stored under
@@ -80,13 +82,46 @@ schema migrations, and seeds three example domains.
 ## Data Model
 
 - **domains** — top-level categories (`name`, `description`).
-- **topics** — belong to a domain (`name`, `description`, `created_at`).
+- **folders** — belong to a domain (`name`, `description`, `parent_id`); form a tree inside
+  a domain. A topic may sit directly under a domain or under a folder.
+- **topics** — belong to a domain (`name`, `description`, `created_at`); optionally linked
+  to a folder via `folder_id`.
 - **statements** — belong to a topic (`text`, `created_at`).
 - **attachments** — belong to a statement (`title`, `type`, `content`, `filename`); the
   `type` column is constrained to the supported asset types.
 
 Deleting a domain, topic, or statement cascades to its children and removes any
 referenced upload files from disk.
+
+## Move semantics
+
+There are **three distinct "Move" operations**. Their targets and scope differ; never
+conflate them and never change a move target's level in the hierarchy without updating the
+guard logic in `app.py` (see each route) and the matching modal.
+
+| Operation | Button location | Route | Moves a… | To a… | Scope / guard |
+| --- | --- | --- | --- | --- | --- |
+| Move **Topic** | Topic header (⇄) | `move_topic` | topic | **folder** (or loose in domain) | target folder must be in the same domain |
+| Move **Statement** | Statement card (⇄) | `move_statement` | statement | **topic** | target topic must be in the **same domain**; never a folder |
+| Move **Asset** | Asset/evidence card (⇄) | `move_attachment` | attachment | **statement** | target statement must be in the **same topic**; never a topic/folder |
+
+Hierarchy reminder: `domains › folders › topics › statements › attachments`. A child can
+only be re-parented to a **peer or lower sibling level**, never upward. So:
+- A statement is re-parented to another **topic** (peer level), never to a **folder**
+  (folders sit above topics).
+- An asset is re-parented to another **statement** (peer level) **within the same topic**;
+  cross-topic asset moves are intentionally out of scope (use Move Statement instead).
+
+The topic-header Move (to a folder) and the statement-card Move (to a topic) use different
+modals and different labels on purpose. Keep the labels unambiguous if either is revisited.
+
+### Move UI surfaces
+- `templates/modals/move_topic.html` — folder `<select>`.
+- `templates/modals/move_statement.html` — same-domain topic `<select>` (excludes current topic).
+- `templates/modals/move_attachment.html` — one shared modal for all asset cards; the asset's
+  id and current statement are filled by `openMoveAttachmentModal()` in `static/js/app.js`
+  when the card's Move button is clicked. The current statement's `<option>` is disabled to
+  prevent a no-op self-move.
 
 ## Notes
 

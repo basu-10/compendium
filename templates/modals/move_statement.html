@@ -1,0 +1,26 @@
+{% extends "modals/base_modal.html" %}
+{% block modal_content %}
+{# "Move to topic" — re-parents a STATEMENT under a different TOPIC in the SAME
+   domain. Never a folder: a folder sits above topics in the hierarchy. See
+   README "Move semantics". The statement id is in the URL (move_url); the form
+   only carries the target topic. #}
+<form id="{{ modal_id }}-form" class="add-form" method="POST" action="{{ move_url }}">
+    <input type="hidden" name="statement_id" value="{{ statement_id }}">
+    <h3 id="{{ modal_id }}-title">Move Statement to Topic</h3>
+    <p class="modal-hint">Pick a topic in this domain. A statement cannot be filed directly under a folder.</p>
+    <div class="form-group">
+        <label for="{{ modal_id }}-topic">Topic</label>
+        <select id="{{ modal_id }}-topic" name="to_topic_id" required>
+            {% for t in move_topics %}
+            {% if t.id != current_topic_id %}
+            <option value="{{ t.id }}">{{ t.name }}</option>
+            {% endif %}
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-actions">
+        <button type="submit" class="btn-primary">Move</button>
+        <button type="button" class="btn-secondary" onclick="closeModal('{{ modal_id }}')">Cancel</button>
+    </div>
+</form>
+{% endblock %}

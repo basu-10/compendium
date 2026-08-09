@@ -730,6 +730,14 @@ def topic(topic_id):
                 all_folders.append({'id': n['id'], 'name': n['name'], 'depth': depth, 'indent': '\u00a0' * (depth * 4)})
                 walk(n['children'], depth + 1)
         walk(domain_tree, 0)
+    # All topics in this domain, used by the statement "Move to topic" modal. The
+    # current topic is excluded client-side (a statement cannot move to itself).
+    domain_topics = []
+    if topic:
+        domain_topics = conn.execute(
+            'SELECT id, name FROM topics WHERE domain_id = ? ORDER BY name',
+            (topic['domain_id'],),
+        ).fetchall()
     statements = conn.execute('SELECT * FROM statements WHERE topic_id = ? ORDER BY position ASC, created_at ASC', (topic_id,)).fetchall()
     statement_ids = [s['id'] for s in statements]
     if statement_ids:
@@ -806,6 +814,7 @@ def topic(topic_id):
         topic=topic,
         folder_path=folder_path,
         all_folders=all_folders,
+        domain_topics=domain_topics,
         statements=statements,
         attachments_by_statement=attachments_by_statement,
         evidence_data=evidence_data,
@@ -2162,6 +2171,103 @@ def move_topic():
     conn.commit()
     conn.close()
     return redirect(url_for('domain', domain_id=domain_id))
+
+
+@app.route('/move_statement/<int:statement_id>', methods=['POST'])
+def move_statement(statement_id):
+    """Re-parent a statement under a *different topic* in the SAME domain.
+
+    Semantics (documented in README "Move semantics"):
+      - A statement lives directly under a topic (statements.topic_id).
+      - "Move" here means changing the statement's topic, i.e. moving it
+        sideways/down to a peer topic. It never targets a folder: a folder
+        sits ABOVE topics in the hierarchy (domains › folders › topics), so a
+        statement can never be filed directly under a folder.
+      - The target topic must belong to the statement's current domain; cross-
+        domain moves are rejected because a topic is domain-scoped.
+    """
+    to_topic_id = request.form.get('to_topic_id')
+    conn = get_db()
+    stmt = conn.execute('SELECT * FROM statements WHERE id = ?', (statement_id,)).fetchone()
+    if not stmt:
+        conn.close()
+        flash('Statement not found')
+        return redirect(request.referrer or url_for('all_domains'))
+    topic = conn.execute('SELECT * FROM topics WHERE id = ?', (to_topic_id,)).fetchone()
+    if not topic:
+        conn.close()
+        flash('Target topic not found')
+        return redirect_to_topic_referrer(stmt['topic_id'], statement_id)
+    # Domain guard: the statement's topic and the target topic must share a domain.
+    if stmt['topic_id'] == to_topic_id:
+        conn.close()
+        return redirect_to_topic_referrer(stmt['topic_id'], statement_id)
+    current_topic = conn.execute('SELECT domain_id FROM topics WHERE id = ?', (stmt['topic_id'],)).fetchone()
+    if not current_topic or current_topic['domain_id'] != topic['domain_id']:
+        conn.close()
+        flash('A statement can only be moved to a topic in the same domain')
+        return redirect_to_topic_referrer(stmt['topic_id'], statement_id)
+    # Append at the end of the destination topic's statement list.
+    max_pos = conn.execute(
+        'SELECT MAX(position) AS m FROM statements WHERE topic_id = ?', (to_topic_id,)
+    ).fetchone()['m']
+    next_pos = (max_pos or 0) + 1
+    conn.execute(
+        'UPDATE statements SET topic_id = ?, position = ? WHERE id = ?',
+        (to_topic_id, next_pos, statement_id),
+    )
+    conn.commit()
+    conn.close()
+    return redirect_to_topic_referrer(to_topic_id, statement_id)
+
+
+@app.route('/move_attachment/<int:attachment_id>', methods=['POST'])
+def move_attachment(attachment_id):
+    """Re-assign an asset to a *different statement* in the SAME topic.
+
+    Semantics (documented in README "Move semantics"):
+      - An asset (attachment) lives directly under a statement
+        (attachments.statement_id).
+      - "Move" here means changing the asset's statement, i.e. moving it
+        sideways to a peer statement. Scope is the CURRENT topic only: the
+        target statement must belong to the asset's current topic. Cross-topic
+        asset moves are out of scope (use the statement Move for that).
+    """
+    to_statement_id = request.form.get('to_statement_id')
+    conn = get_db()
+    att = conn.execute('SELECT * FROM attachments WHERE id = ?', (attachment_id,)).fetchone()
+    if not att:
+        conn.close()
+        flash('Asset not found')
+        return redirect(request.referrer or url_for('all_domains'))
+    target = conn.execute('SELECT * FROM statements WHERE id = ?', (to_statement_id,)).fetchone()
+    if not target:
+        conn.close()
+        flash('Target statement not found')
+        return redirect_to_topic_referrer(att['statement_id'], att['statement_id'])
+    if att['statement_id'] == to_statement_id:
+        conn.close()
+        return redirect_to_topic_referrer(att['statement_id'], att['statement_id'])
+    # Scope guard: target statement must live in the asset's current topic.
+    current_stmt = conn.execute(
+        'SELECT topic_id FROM statements WHERE id = ?', (att['statement_id'],)
+    ).fetchone()
+    if not current_stmt or current_stmt['topic_id'] != target['topic_id']:
+        conn.close()
+        flash('An asset can only be moved to another statement in the same topic')
+        return redirect_to_topic_referrer(att['statement_id'], att['statement_id'])
+    # Append at the end of the destination statement's asset list.
+    max_pos = conn.execute(
+        'SELECT MAX(position) AS m FROM attachments WHERE statement_id = ?', (to_statement_id,)
+    ).fetchone()['m']
+    next_pos = (max_pos or 0) + 1
+    conn.execute(
+        'UPDATE attachments SET statement_id = ?, position = ? WHERE id = ?',
+        (to_statement_id, next_pos, attachment_id),
+    )
+    conn.commit()
+    conn.close()
+    return redirect_to_topic_referrer(target['topic_id'], to_statement_id)
 
 
 @app.route('/duplicate_topic/<int:topic_id>', methods=['POST'])

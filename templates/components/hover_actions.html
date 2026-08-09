@@ -13,7 +13,9 @@
     <button type="button" class="icon-btn" onclick="openModal('{{ attach_modal_id }}'); event.stopPropagation();" title="Attach Asset" aria-label="Attach Asset">📎</button>
     {% endif %}
     {% if move_url %}
-    <button type="button" class="icon-btn move-btn" onclick="openModal('{{ move_modal_id }}'); event.stopPropagation();" title="Move" aria-label="Move">⇄</button>
+    <button type="button" class="icon-btn move-btn"
+            {% if move_modal_id == 'move-attachment' %}data-move-attachment-id="{{ att.id }}" onclick="openMoveAttachmentModal(this.dataset.moveAttachmentId); event.stopPropagation();"{% else %}onclick="openModal('{{ move_modal_id }}'); event.stopPropagation();"{% endif %}
+            title="Move" aria-label="Move">⇄</button>
     {% endif %}
     {% if duplicate_url %}
     <form method="POST" action="{{ duplicate_url }}" style="display:inline;" onsubmit="event.stopPropagation();">

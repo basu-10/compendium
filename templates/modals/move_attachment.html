@@ -1,0 +1,26 @@
+{% extends "modals/base_modal.html" %}
+{% block modal_content %}
+{# "Move asset" — re-assigns an ASSET to a different STATEMENT in the SAME topic.
+   Never cross-topic: an asset can only move sideways to a peer statement. The
+   attachment id and its current statement are set by JS (openMoveAttachmentModal)
+   when the card's Move button is clicked, because this is ONE shared modal for
+   every asset card. See README "Move semantics". #}
+<form id="{{ modal_id }}-form" class="add-form" method="POST" action="{{ url_for('move_attachment', attachment_id=0) }}" data-base-action="{{ url_for('move_attachment', attachment_id=0) }}">
+    <input type="hidden" name="attachment_id" id="{{ modal_id }}-attachment-id" value="">
+    <input type="hidden" name="from_statement_id" id="{{ modal_id }}-from-statement" value="">
+    <h3 id="{{ modal_id }}-title">Move Asset to Statement</h3>
+    <p class="modal-hint">Pick a statement in this topic. Assets cannot be moved to another topic from here.</p>
+    <div class="form-group">
+        <label for="{{ modal_id }}-statement">Statement</label>
+        <select id="{{ modal_id }}-statement" name="to_statement_id" required>
+            {% for s in move_statements %}
+            <option value="{{ s.id }}">{{ s.text }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-actions">
+        <button type="submit" class="btn-primary">Move</button>
+        <button type="button" class="btn-secondary" onclick="closeModal('{{ modal_id }}')">Cancel</button>
+    </div>
+</form>
+{% endblock %}

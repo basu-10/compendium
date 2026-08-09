@@ -86,6 +86,38 @@ function openConfirmModal(modalId, title, message, deleteUrl) {
     }
 }
 
+// --- Move asset modal ---
+// Single shared "Move Asset" modal for every evidence card. The card's Move
+// button supplies the attachment id and (implicitly, via the visible evidence
+// pane) its current statement. This modal only moves an asset to another
+// STATEMENT in the SAME topic — never across topics. See README "Move semantics".
+function openMoveAttachmentModal(attachmentId) {
+    const modal = document.getElementById('move-attachment');
+    if (!modal) return;
+    const form = modal.querySelector('form');
+    const idInput = document.getElementById('move-attachment-attachment-id');
+    const fromInput = document.getElementById('move-attachment-from-statement');
+    if (idInput) idInput.value = attachmentId;
+    // The asset's current statement is whichever statement's pane is showing it.
+    const currentStmt = window.currentStatementId || null;
+    if (fromInput) fromInput.value = currentStmt || '';
+    // Build the per-attachment action URL (route is /move_attachment/<id>).
+    if (form) form.action = '/move_attachment/' + encodeURIComponent(attachmentId);
+    // Prevent moving an asset to the statement it already belongs to.
+    const select = document.getElementById('move-attachment-statement');
+    if (select) {
+        Array.prototype.forEach.call(select.options, function(opt) {
+            opt.disabled = !!currentStmt && String(opt.value) === String(currentStmt);
+        });
+        // Default the selection to the first non-disabled option.
+        const firstEnabled = Array.prototype.find.call(
+            select.options, function(o) { return !o.disabled; }
+        );
+        if (firstEnabled) select.value = firstEnabled.value;
+    }
+    openModal('move-attachment');
+}
+
 // --- Hover Actions ---
 // Visibility is handled entirely in CSS (:hover + coarse-pointer media query).
 // This only handles touch devices revealing actions on tap.
@@ -604,6 +636,18 @@ function renderEvidenceCard(att) {
         form.submit();
     });
     actions.appendChild(dupBtn);
+
+    const moveBtn = document.createElement('button');
+    moveBtn.type = 'button';
+    moveBtn.className = 'icon-btn move-btn';
+    moveBtn.title = 'Move';
+    moveBtn.setAttribute('aria-label', 'Move');
+    moveBtn.textContent = '\u21C4';
+    moveBtn.addEventListener('click', function(event) {
+        event.stopPropagation();
+        openMoveAttachmentModal(att.id);
+    });
+    actions.appendChild(moveBtn);
 
     const collapseBtn = document.createElement('button');
     collapseBtn.type = 'button';

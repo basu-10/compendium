@@ -954,7 +954,7 @@ def domain(domain_id):
                   )
             GROUP BY t.id
             ORDER BY t.created_at DESC
-        ''', (domain_id, uid, uid, uid, uid, uid)).fetchall()
+        ''', (domain_id, uid, uid, uid)).fetchall()
     else:
         # Logged out: show loose topics that are either:
         #   (a) loose and public

@@ -809,7 +809,7 @@ def all_domains():
     vis_cond, vis_params = visibility_clause()
     if q:
         domains = conn.execute(f'''
-            SELECT d.*, COUNT(t.id) as topic_count
+            SELECT d.*, SUM(CASE WHEN t.is_public = 1 THEN 1 ELSE 0 END) as topic_count
             FROM domains d
             LEFT JOIN topics t ON d.id = t.domain_id
             WHERE ({vis_cond}) AND (LOWER(d.name) LIKE LOWER(?) OR LOWER(COALESCE(d.description,'')) LIKE LOWER(?))
@@ -818,7 +818,7 @@ def all_domains():
         ''', vis_params + [f"%{q}%", f"%{q}%"]).fetchall()
     else:
         domains = conn.execute(f'''
-            SELECT d.*, COUNT(t.id) as topic_count 
+            SELECT d.*, SUM(CASE WHEN t.is_public = 1 THEN 1 ELSE 0 END) as topic_count 
             FROM domains d 
             LEFT JOIN topics t ON d.id = t.domain_id 
             WHERE {vis_cond}

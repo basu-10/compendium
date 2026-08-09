@@ -32,7 +32,10 @@ app.secret_key = os.environ.get('COMPANION_SECRET_KEY', 'compendium-dev-secret-k
 #   compendium-venv/   -> virtual environment (sibling of the repo)
 # Paths resolve to a sibling directory named "compendium-data" next to this repo.
 REPO_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(os.path.dirname(REPO_DIR), 'compendium-data')
+DATA_DIR = os.environ.get(
+    'COMPANION_DATA_DIR',
+    os.path.join(os.path.dirname(REPO_DIR), 'compendium-data'),
+)
 
 app.config['UPLOAD_FOLDER'] = os.path.join(DATA_DIR, 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max upload

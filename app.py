@@ -874,7 +874,7 @@ def domain(domain_id):
         loose_topics = [t for t in loose_topics if t['id'] in matched
                         or q.lower() in (t['name'] or '').lower()
                         or q.lower() in (t['description'] or '').lower()]
-    folder_tree = build_folder_tree(conn, folders)
+    folder_tree = build_folder_tree(conn, folders, topic_vis)
     # Flat, depth-indented folder list for the Move-topic <select>. Walk the
     # nested tree so parent folders always precede their children.
     all_folders = []

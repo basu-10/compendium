@@ -112,6 +112,12 @@ function initEvidenceCards() {
             edit: function() { editEvidence(card.dataset.id); },
         });
     });
+    // The server-rendered "add asset" tile needs the same context menu as the
+    // JS-rebuilt one (see buildAddEvidenceCard), since showEvidence() replaces
+    // the whole grid and re-binds only evidence cards.
+    document.querySelectorAll('#evidence-content .add-card').forEach(function(btn) {
+        attachAddAssetContextMenu(btn, btn.dataset.statementId);
+    });
     initEvidenceOutsideCollapse();
 }
 
@@ -815,6 +821,7 @@ function buildAddEvidenceCard(statementId, isEmpty) {
     btn.addEventListener('click', function() {
         openAttachModal(statementId);
     });
+    attachAddAssetContextMenu(btn, statementId);
     return btn;
 }
 
@@ -901,6 +908,258 @@ function uploadDroppedFiles(statementId, fileList) {
         // Re-render the selected statement's pane so the dropped assets appear;
         // evidenceData now holds the fresh rows we just merged in.
         showEvidence(statementId);
+    });
+}
+
+// --- Add-asset context menu (right-click / long-press) ---
+// A small popup with clipboard-driven shortcuts so a user can add evidence
+// straight from the OS clipboard without opening the modal: "Scrape URL"
+// fetches a URL found in the clipboard and saves it as a richtext asset, and
+// "Paste and create" turns whatever is on the clipboard (image, file, URL, or
+// text) into the appropriate asset type.
+let _addAssetMenuEl = null;
+let _addAssetLongPressTimer = null;
+
+function getAddAssetMenuEl() {
+    if (_addAssetMenuEl) return _addAssetMenuEl;
+    const el = document.createElement('div');
+    el.id = 'add-asset-menu';
+    el.className = 'add-asset-menu';
+    el.setAttribute('role', 'menu');
+    el.innerHTML =
+        '<button type="button" class="add-asset-menu-item" data-action="scrape" role="menuitem">Scrape URL</button>' +
+        '<button type="button" class="add-asset-menu-item" data-action="paste" role="menuitem">Paste and create</button>';
+    document.body.appendChild(el);
+
+    el.addEventListener('click', function(event) {
+        const item = event.target.closest('.add-asset-menu-item');
+        if (!item) return;
+        const action = item.dataset.action;
+        const trigger = el.__trigger;
+        const statementId = el.__statementId;
+        hideAddAssetMenu();
+        if (!trigger || statementId == null) return;
+        if (action === 'scrape') {
+            quickAddFromClipboard(statementId, 'scrape');
+        } else if (action === 'paste') {
+            quickAddFromClipboard(statementId, 'paste');
+        }
+    });
+
+    // Clicking elsewhere dismisses the menu.
+    document.addEventListener('click', function(event) {
+        if (_addAssetMenuEl && !_addAssetMenuEl.contains(event.target)) {
+            hideAddAssetMenu();
+        }
+    });
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') hideAddAssetMenu();
+    });
+    document.addEventListener('scroll', hideAddAssetMenu, true);
+    window.addEventListener('resize', hideAddAssetMenu);
+
+    _addAssetMenuEl = el;
+    return el;
+}
+
+function showAddAssetMenu(trigger, statementId, x, y) {
+    const menu = getAddAssetMenuEl();
+    menu.__trigger = trigger;
+    menu.__statementId = statementId;
+    menu.classList.add('show');
+    // Position after it is visible so offsetWidth/Height are correct.
+    const rect = menu.getBoundingClientRect();
+    const px = Math.min(x, window.innerWidth - rect.width - 8);
+    const py = Math.min(y, window.innerHeight - rect.height - 8);
+    menu.style.left = Math.max(8, px) + 'px';
+    menu.style.top = Math.max(8, py) + 'px';
+    updateAddAssetMenuDisabledState(menu);
+}
+
+function hideAddAssetMenu() {
+    if (_addAssetMenuEl) _addAssetMenuEl.classList.remove('show');
+}
+
+// Disable items that cannot possibly succeed given current clipboard access.
+// We probe nothing synchronously; instead we default to enabled and let the
+// action report failures, but the "Paste and create" item needs clipboard
+// read permission which may be denied, so reflect that once known.
+function updateAddAssetMenuDisabledState() { /* state resolved at action time */ }
+
+function attachAddAssetContextMenu(button, statementId) {
+    if (!button || button.dataset.ctxBound === '1') return;
+    button.dataset.ctxBound = '1';
+
+    // Desktop right-click (and the OS context menu on touch long-press).
+    button.addEventListener('contextmenu', function(event) {
+        event.preventDefault();
+        showAddAssetMenu(button, statementId, event.clientX, event.clientY);
+    });
+
+    // Long-press for touch devices: open the menu near the finger.
+    button.addEventListener('touchstart', function(event) {
+        if (event.touches.length !== 1) return;
+        const touch = event.touches[0];
+        _addAssetLongPressTimer = setTimeout(function() {
+            _addAssetLongPressTimer = null;
+            // Prevent the subsequent synthetic click from opening the modal.
+            button.__suppressClick = true;
+            showAddAssetMenu(button, statementId, touch.clientX, touch.clientY);
+            if (navigator.vibrate) navigator.vibrate(30);
+        }, 500);
+    }, { passive: true });
+
+    function cancelLongPress() {
+        if (_addAssetLongPressTimer) {
+            clearTimeout(_addAssetLongPressTimer);
+            _addAssetLongPressTimer = null;
+        }
+    }
+    button.addEventListener('touchend', function() {
+        cancelLongPress();
+        if (button.__suppressClick) {
+            button.__suppressClick = false;
+            // Swallow the click that follows a long-press so the modal stays closed.
+            setTimeout(function() {
+                const handler = function(e) { e.stopPropagation(); e.preventDefault(); };
+                button.addEventListener('click', handler, { once: true, capture: true });
+            }, 0);
+        }
+    });
+    button.addEventListener('touchmove', cancelLongPress, { passive: true });
+    button.addEventListener('touchcancel', cancelLongPress);
+}
+
+async function readClipboardText() {
+    try {
+        if (!navigator.clipboard || !navigator.clipboard.readText) return null;
+        return await navigator.clipboard.readText();
+    } catch (e) {
+        return null;
+    }
+}
+
+async function readClipboardItems() {
+    try {
+        if (!navigator.clipboard || !navigator.clipboard.read) return [];
+        const items = await navigator.clipboard.read();
+        return items || [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function looksLikeUrl(value) {
+    const v = (value || '').trim();
+    if (!v) return false;
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) return true;
+    return /^((www\.)?[a-z0-9-]+(\.[a-z]{2,})+(|\/.*))$/i.test(v);
+}
+
+// Turn clipboard content into an asset for `statementId` based on `mode`:
+//   'scrape' -> require a URL, save as richtext via /api/capture
+//   'paste'  -> image/file -> upload; URL -> capture; text -> richtext via create_attachment
+async function quickAddFromClipboard(statementId, mode) {
+    if (statementId == null) {
+        flashMessage('Select a statement first.');
+        return;
+    }
+
+    const items = await readClipboardItems();
+
+    // Image / file on the clipboard: upload it. Only relevant for 'paste'.
+        if (mode === 'paste' && items.length) {
+            const files = [];
+            for (const item of items) {
+                for (const type of (item.types || [])) {
+                    if (type.startsWith('image/') || type.startsWith('application/') || type.startsWith('text/')) {
+                        try {
+                            const blob = await item.getType(type);
+                            if (blob && blob.size > 0) {
+                                // The server infers the asset type from the
+                                // filename extension, so give the blob a name
+                                // derived from its MIME type (e.g. image/png -> png).
+                                if (!blob.name) {
+                                    const ext = (type.split('/')[1] || 'bin').split(';')[0];
+                                    try {
+                                        Object.defineProperty(blob, 'name', {
+                                            value: 'clipboard-' + Date.now() + '.' + ext
+                                        });
+                                    } catch (e) { /* unconfigurable; best effort */ }
+                                }
+                                files.push(blob);
+                            }
+                        } catch (e) { /* type unavailable */ }
+                    }
+                }
+            }
+            if (files.length) {
+                uploadDroppedFiles(statementId, files);
+                return;
+            }
+        }
+
+    const text = (await readClipboardText() || '').trim();
+    if (!text) {
+        flashMessage('Clipboard is empty or unreadable.');
+        return;
+    }
+
+    if (mode === 'scrape') {
+        if (!looksLikeUrl(text)) {
+            flashMessage('Clipboard does not contain a URL to scrape.');
+            return;
+        }
+        captureFromUrl(statementId, text);
+        return;
+    }
+
+    // 'paste' mode: decide by content.
+    if (looksLikeUrl(text)) {
+        captureFromUrl(statementId, text);
+        return;
+    }
+
+    // Plain text -> richtext asset via create_attachment.
+    const form = new FormData();
+    form.append('statement_id', statementId);
+    form.append('content', text);
+    form.append('title', (text.length > 60 ? text.slice(0, 60) + '…' : text));
+    fetch('/create_attachment', {
+        method: 'POST',
+        body: form,
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    }).then(function() {
+        // create_attachment redirects; reload the topic page so the new card
+        // appears, staying on the working statement.
+        const params = new URLSearchParams(window.location.search);
+        params.set('stmt', String(statementId));
+        window.location.search = params.toString() ? '?' + params.toString() : '';
+    }).catch(function() {
+        flashMessage('Could not create asset from clipboard text.');
+    });
+}
+
+function captureFromUrl(statementId, url) {
+    flashMessage('Scraping ' + url + ' …');
+    fetch('/api/capture', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        body: JSON.stringify({ statement_id: statementId, url: url })
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (!data || !data.ok) {
+            flashMessage('Could not scrape URL: ' + ((data && data.error) || 'unknown error'));
+            return;
+        }
+        if (typeof evidenceData !== 'undefined') {
+            const sid = String(statementId);
+            // Refresh from the server so the new richtext card renders with full data.
+            const params = new URLSearchParams(window.location.search);
+            params.set('stmt', sid);
+            window.location.search = params.toString() ? '?' + params.toString() : '';
+        }
+    }).catch(function() {
+        flashMessage('Could not scrape URL: request failed.');
     });
 }
 

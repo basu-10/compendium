@@ -571,6 +571,48 @@ p {
     transform: translate(-50%, 0);
 }
 
+/* Add-asset context menu (right-click / long-press on the "add asset" tile).
+   A small floating popup with clipboard-driven shortcuts so evidence can be
+   created straight from the OS clipboard without opening the modal. */
+.add-asset-menu {
+    position: fixed;
+    display: none;
+    min-width: 12rem;
+    background: var(--bg-elevated, #1f2933);
+    color: var(--text, #e6edf3);
+    border: 1px solid var(--border, #2c3a47);
+    border-radius: 0.5rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    padding: 0.25rem;
+    z-index: 300;
+    font-size: 0.875rem;
+}
+.add-asset-menu.show {
+    display: block;
+}
+.add-asset-menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    color: inherit;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.35rem;
+    cursor: pointer;
+    font: inherit;
+}
+.add-asset-menu-item:hover,
+.add-asset-menu-item:focus-visible {
+    background: var(--accent, #3b82f6);
+    color: #fff;
+    outline: none;
+}
+.add-asset-menu-item[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 /* Scroll container shared by the statement list and its trailing add row, so
    the add row can be sticky relative to the list rather than the viewport. */
 .pane-body {
@@ -1243,14 +1285,14 @@ p {
     flex: 0 0 auto;
 }
 
-.modal-overlay.active.fullscreen .modal-content #url-group-edit-{{ attachment.id }} {
+.modal-overlay.active.fullscreen .modal-content .content-group-edit {
     flex: 1 1 auto;
     display: flex;
     flex-direction: column;
     min-height: 0;
 }
 
-.modal-overlay.active.fullscreen .modal-content #url-group-edit-{{ attachment.id }} textarea {
+.modal-overlay.active.fullscreen .modal-content .content-group-edit textarea {
     flex: 1;
     min-height: 0;
     resize: none;

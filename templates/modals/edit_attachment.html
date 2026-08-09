@@ -44,8 +44,9 @@
         {% endif %}
     </div>
 
-    <div class="form-group" id="url-group-edit-{{ attachment.id }}"
-         style="display: {% if is_content_type %}block{% else %}none{% endif %};">
+    <div class="form-group content-group-edit"
+          id="url-group-edit-{{ attachment.id }}"
+          style="display: {% if is_content_type %}block{% else %}none{% endif %};">
         <label for="edit-att-content-{{ attachment.id }}">URL / Content</label>
         {# Full content is populated on demand by populateEditForm() to keep the
            initial page payload small; only a placeholder ships at load time. #}

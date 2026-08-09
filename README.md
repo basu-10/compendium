@@ -155,10 +155,11 @@ fresh clone boots cleanly under a WSGI server.
    pip install -r requirements.txt
    ```
 
-3. **Web tab** — set:
-   - Source code / Working directory: `/home/<username>/compendium`
-   - WSGI file: paste the contents of `wsgi.py` (replacing `<username>`), or
-     point it at `/home/<username>/compendium/wsgi.py`.
+  3. **Web tab** — set:
+    - Source code / Working directory: `/home/<username>/compendium`
+    - WSGI file: paste the contents of `wsgi.py` (it derives your username from
+      the file path automatically — no manual edit needed), or point it at
+      `/home/<username>/compendium/wsgi.py`.
 
 4. **Update workflow** (repeat for every change):
    ```bash

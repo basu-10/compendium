@@ -3040,6 +3040,30 @@ def public_directory():
     conn.close()
     return render_template('public.html', topics=topics, folders=folders)
 
+
+
+@app.route('/user/<username>')
+def user_public(username):
+    conn = get_db()
+    # Find the user by username
+    user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+    if not user:
+        conn.close()
+        flash('User not found')
+        return redirect(url_for('index'))
+    # Get the user's public topics
+    topics = conn.execute('''
+        SELECT t.id, t.name, t.description, d.id AS domain_id, d.name AS domain_name
+        FROM topics t
+        JOIN domains d ON t.domain_id = d.id
+        WHERE t.user_id = ? AND t.is_public = 1
+        ORDER BY t.created_at DESC
+    ''', (user['id'],)).fetchall()
+    conn.close()
+    return render_template('user_public.html', user=user, topics=topics)
+
+
+
 if __name__ == '__main__':
     init_db()
     debug = os.environ.get('FLASK_DEBUG', '1') == '1'

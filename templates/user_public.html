@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}{{ user.username }}'s Public Topics - Compendium{% endblock %}
+
+{% block content %}
+<div class="user-public-page">
+    <header class="user-public-header">
+        <h1>{{ user.username }}'s Public Topics</h1>
+        <p class="user-public-subtitle">Topics shared publicly by {{ user.username }} across all domains.</p>
+        <div class="user-public-actions">
+            <button id="share-btn" class="btn-secondary" title="Share this page">
+                <span>Share</span>
+            </button>
+        </div>
+    </header>
+
+    {% if topics %}
+    <h2 class="public-section">Topics</h2>
+    <div class="grid">
+        {% for topic in topics %}
+        <a class="card" href="{{ url_for('topic', topic_id=topic.id) }}">
+            <h2>{{ topic.name }}</h2>
+            <p>{{ topic.description or 'No description.' }}</p>
+            <div class="tag">in {{ topic.domain_name }}</div>
+            <div class="owner-badge">by {{ user.username }}</div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty-state">{{ user.username }} hasn't shared any public topics yet.</p>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const shareBtn = document.getElementById('share-btn');
+        if (shareBtn) {
+            shareBtn.addEventListener('click', function() {
+                const pageUrl = window.location.href;
+                // Try to use the Web Share API if available
+                if (navigator.share) {
+                    navigator.share({
+                        title: '{{ user.username }}'s Public Topics on Compendium',
+                        text: 'Check out the public topics shared by {{ user.username }} on Compendium.',
+                        url: pageUrl
+                    }).catch(() => {
+                        // Fallback to copying to clipboard
+                        copyToClipboard(pageUrl);
+                    });
+                } else {
+                    // Fallback to copying to clipboard
+                    copyToClipboard(pageUrl);
+                }
+            });
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                // Show a tooltip or temporary message
+                const btn = document.getElementById('share-btn');
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '<span>Copied!</span>';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.innerHTML = originalText;
+                    btn.classList.remove('copied');
+                }, 2000);
+            }).catch(() => {
+                // Fallback to prompt if clipboard API fails
+                const textarea = document.createElement('textarea');
+                textarea.value = pageUrl;
+                document.body.appendChild(textarea);
+                textarea.select();
+                try {
+                    document.execCommand('copy');
+                    alert('Page URL copied to clipboard!');
+                } catch (err) {
+                    prompt('Copy the URL below: ', pageUrl);
+                }
+                document.body.removeChild(textarea);
+            });
+        }
+    });
+</script>
+{% endblock %}

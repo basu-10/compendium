@@ -804,9 +804,34 @@ def domain(domain_id):
         GROUP BY t.id
         ORDER BY t.created_at DESC
     ''', (domain_id,)).fetchall()
-    folders = conn.execute(
-        f'SELECT * FROM folders WHERE domain_id = ? {folder_vis} ORDER BY name', (domain_id,)
-    ).fetchall()
+    # Folders visible to the viewer. The owner sees every folder. Non-owners see
+    # a folder when it is public OR contains (directly or anywhere beneath it) a
+    # public topic, plus the ancestor chain so the path to that topic renders.
+    if can_edit:
+        folders = conn.execute(
+            'SELECT * FROM folders WHERE domain_id = ? ORDER BY name', (domain_id,)
+        ).fetchall()
+    else:
+        folder_ids = [r['id'] for r in conn.execute('''
+            WITH RECURSIVE subtree(id) AS (
+                SELECT f.id FROM folders f
+                WHERE f.domain_id = ?
+                  AND (f.is_public = 1
+                       OR f.id IN (SELECT folder_id FROM topics WHERE is_public = 1))
+                UNION ALL
+                SELECT f.parent_id FROM folders f JOIN subtree s ON f.id = s.id
+                WHERE f.parent_id IS NOT NULL
+            )
+            SELECT DISTINCT id FROM subtree
+        ''', (domain_id,)).fetchall()]
+        if folder_ids:
+            placeholders = ','.join('?' * len(folder_ids))
+            folders = conn.execute(
+                f'SELECT * FROM folders WHERE id IN ({placeholders}) ORDER BY name',
+                folder_ids,
+            ).fetchall()
+        else:
+            folders = []
     q = request.args.get('q', '').strip()
     if q:
         # Gather every topic id in this domain (root-folder subtrees + loose).
@@ -1912,6 +1937,8 @@ def attachment_table(attachment_id):
 def api_tree():
     """Return the full domain→folder→topic→statement tree for the extension picker."""
     conn = get_db()
+    # The picker is an authenticated owner tool, so no public-only filtering.
+    topic_vis = ''
     domains = conn.execute('SELECT id, name, description FROM domains ORDER BY name').fetchall()
     result = {'domains': []}
     for d in domains:
@@ -1920,7 +1947,7 @@ def api_tree():
         folders = conn.execute(
             'SELECT id, parent_id, name, description FROM folders WHERE domain_id = ? ORDER BY name', (domain_id,)
         ).fetchall()
-        folder_tree = build_folder_tree(conn, folders)
+        folder_tree = build_folder_tree(conn, folders, topic_vis)
         # Topics with no folder (loose topics)
         loose_topics = conn.execute('''
             SELECT t.id, t.name, t.description,
@@ -2266,12 +2293,15 @@ def get_folder_subtree(conn, folder_id):
     return folder_ids, topic_ids
 
 
-def build_folder_tree(conn, folders):
+def build_folder_tree(conn, folders, topic_vis=''):
     """Nest a flat folder list into a tree and attach topic + aggregate counts.
 
     `folders` is any iterable of folder rows for a single domain. Each returned
     node is a dict with the folder's columns plus `children`, `topics`, and
     rolled-up `statement_count` / `attachment_count` over the whole subtree.
+
+    `topic_vis` is an extra SQL predicate (e.g. 'AND t.is_public = 1') appended
+    to the per-folder topic query so non-owners only ever see public topics.
     """
     by_id = {}
     for f in folders:
@@ -2303,10 +2333,10 @@ def build_folder_tree(conn, folders):
             FROM topics t
             LEFT JOIN statements s ON t.id = s.topic_id
             LEFT JOIN attachments a ON s.id = a.statement_id
-            WHERE t.folder_id = ?
+            WHERE t.folder_id = ? %s
             GROUP BY t.id
             ORDER BY t.created_at DESC
-        ''', (node['id'],)).fetchall()
+        ''' % topic_vis, (node['id'],)).fetchall()
         node['topics'] = [dict(r) for r in rows]
         node['statement_count'] += sum(r['statement_count'] for r in rows)
         node['attachment_count'] += sum(r['attachment_count'] for r in rows)

@@ -131,6 +131,9 @@
         </div>
     </div>
 
+    <script>
+        window.COMPENDIUM_ASSET_KINDS = {{ type_to_kind | tojson }};
+    </script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     <script src="{{ url_for('static', filename='js/editors.js') }}"></script>
     {% block scripts %}{% endblock %}

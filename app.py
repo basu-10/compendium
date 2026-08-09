@@ -319,6 +319,7 @@ def inject_globals():
         'current_year': datetime.now().year,
         'current_user': g.user,
         'logged_in': g.user is not None,
+        'type_to_kind': TYPE_TO_KIND,
     }
 
 
@@ -918,17 +919,17 @@ def domain(domain_id):
     # Domains are shared, always-visible category labels with no owner, so every
     # domain is reachable by everyone (logged in or not). Visibility of the
     # topics/folders inside is decided per row below.
-        uid = g.user['id'] if g.user is not None else None
-        if uid is not None:
-            topic_vis = 'AND (t.user_id = ? OR t.is_public = 1)'
-            topic_params = [uid]
-            folder_vis = 'AND (f.user_id = ? OR f.is_public = 1)'
-            folder_params = [uid]
-        else:
-            topic_vis = 'AND t.is_public = 1'
-            topic_params = []
-            folder_vis = 'AND f.is_public = 1'
-            folder_params = []
+    uid = g.user['id'] if g.user is not None else None
+    if uid is not None:
+        topic_vis = 'AND (t.user_id = ? OR t.is_public = 1)'
+        topic_params = [uid]
+        folder_vis = 'AND (f.user_id = ? OR f.is_public = 1)'
+        folder_params = [uid]
+    else:
+        topic_vis = 'AND t.is_public = 1'
+        topic_params = []
+        folder_vis = 'AND f.is_public = 1'
+        folder_params = []
         # Loose topics: topics with no folder, plus topics in folders that are not visible to the user
         # but are either public or owned by the user (for logged in) or public (for logged out).
         if uid is not None:
@@ -1051,7 +1052,24 @@ def domain(domain_id):
         loose_topics = [t for t in loose_topics if t['id'] in matched
                         or q.lower() in (t['name'] or '').lower()
                         or q.lower() in (t['description'] or '').lower()]
-    folder_tree = build_folder_tree(conn, folders, topic_vis, topic_params)
+    topic_rows = conn.execute(f'''
+        SELECT t.id, t.name, t.description, t.folder_id,
+               COUNT(DISTINCT s.id) as statement_count,
+               COUNT(DISTINCT a.id) as attachment_count
+        FROM topics t
+        LEFT JOIN statements s ON t.id = s.topic_id
+        LEFT JOIN attachments a ON s.id = a.statement_id
+        WHERE t.domain_id = ? AND t.folder_id IS NOT NULL {topic_vis}
+        GROUP BY t.id
+        ORDER BY t.created_at DESC
+    ''', [domain_id] + topic_params).fetchall()
+    topics_by_folder = {}
+    for row in topic_rows:
+        fid = row['folder_id']
+        if fid not in topics_by_folder:
+            topics_by_folder[fid] = []
+        topics_by_folder[fid].append(dict(row))
+    folder_tree = build_folder_tree(conn, folders, topic_vis, topic_params, topics_by_folder)
     # Flat, depth-indented folder list for the Move-topic <select>. Walk the
     # nested tree so parent folders always precede their children.
     all_folders = []
@@ -1110,7 +1128,24 @@ def topic(topic_id):
         domain_folders = conn.execute(
             'SELECT * FROM folders WHERE domain_id = ? ORDER BY name', (topic['domain_id'],)
         ).fetchall()
-        domain_tree = build_folder_tree(conn, domain_folders)
+        topic_rows = conn.execute('''
+            SELECT t.id, t.name, t.description, t.folder_id,
+                   COUNT(DISTINCT s.id) as statement_count,
+                   COUNT(DISTINCT a.id) as attachment_count
+            FROM topics t
+            LEFT JOIN statements s ON t.id = s.topic_id
+            LEFT JOIN attachments a ON s.id = a.statement_id
+            WHERE t.domain_id = ? AND t.folder_id IS NOT NULL
+            GROUP BY t.id
+            ORDER BY t.created_at DESC
+        ''', (topic['domain_id'],)).fetchall()
+        topics_by_folder = {}
+        for row in topic_rows:
+            fid = row['folder_id']
+            if fid not in topics_by_folder:
+                topics_by_folder[fid] = []
+            topics_by_folder[fid].append(dict(row))
+        domain_tree = build_folder_tree(conn, domain_folders, topics_by_folder=topics_by_folder)
 
         def walk(nodes, depth):
             for n in nodes:
@@ -1263,29 +1298,30 @@ def create_folder():
         flash('Domain and folder name are required')
         return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
-    # Domains are shared: any logged-in user may create a folder in any domain,
-    # so the only check is that the domain exists (no per-user domain gate).
-    domain = conn.execute('SELECT id FROM domains WHERE id = ?', (domain_id,)).fetchone()
-    if not domain:
+    try:
+        # Domains are shared: any logged-in user may create a folder in any domain,
+        # so the only check is that the domain exists (no per-user domain gate).
+        domain = conn.execute('SELECT id FROM domains WHERE id = ?', (domain_id,)).fetchone()
+        if not domain:
+            flash('Domain not found')
+            return redirect(url_for('all_domains'))
+        # A parent folder must exist and belong to this domain.
+        if parent_id:
+            parent = conn.execute(
+                'SELECT id FROM folders WHERE id = ? AND domain_id = ?',
+                (parent_id, domain_id),
+            ).fetchone()
+            if not parent:
+                parent_id = None
+        is_public = 1 if request.form.get('is_public') else 0
+        conn.execute(
+            'INSERT INTO folders (domain_id, parent_id, name, description, user_id, is_public) VALUES (?, ?, ?, ?, ?, ?)',
+            (domain_id, parent_id, name, description, g.user['id'], is_public),
+        )
+        conn.commit()
+        return redirect(url_for('domain', domain_id=domain_id))
+    finally:
         conn.close()
-        flash('Domain not found')
-        return redirect(url_for('all_domains'))
-    # A parent folder must exist and belong to this domain.
-    if parent_id:
-        parent = conn.execute(
-            'SELECT id FROM folders WHERE id = ? AND domain_id = ?',
-            (parent_id, domain_id),
-        ).fetchone()
-        if not parent:
-            parent_id = None
-    is_public = 1 if request.form.get('is_public') else 0
-    conn.execute(
-        'INSERT INTO folders (domain_id, parent_id, name, description, user_id, is_public) VALUES (?, ?, ?, ?, ?, ?)',
-        (domain_id, parent_id, name, description, g.user['id'], is_public),
-    )
-    conn.commit()
-    conn.close()
-    return redirect(url_for('domain', domain_id=domain_id))
 
 @app.route('/update_folder', methods=['POST'])
 @login_required
@@ -1395,7 +1431,7 @@ def create_statement():
         conn.close()
         flash('Topic not found')
         return redirect(request.referrer or url_for('all_domains'))
-    conn.execute('INSERT INTO statements (topic_id, text, position) VALUES (?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM statements WHERE topic_id = ?))', (topic_id, text, topic_id))
+    conn.execute('INSERT INTO statements (topic_id, text, position) VALUES (?, ?, (SELECT COALESCE(MAX(position), -1) + 1000 FROM statements WHERE topic_id = ?))', (topic_id, text, topic_id))
     conn.commit()
     conn.close()
     return redirect(url_for('topic', topic_id=topic_id))
@@ -1523,7 +1559,7 @@ def create_attachment():
     try:
         conn.execute(
             'INSERT INTO attachments (statement_id, title, type, content, filename, tags, position) '
-            'VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM attachments WHERE statement_id = ?))',
+            'VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1000 FROM attachments WHERE statement_id = ?))',
             (statement_id, title, att_type, content, filename, tags, statement_id)
         )
         conn.commit()
@@ -1769,7 +1805,7 @@ def upload_drop(statement_id):
         try:
             cursor = conn.execute(
                 'INSERT INTO attachments (statement_id, title, type, content, filename, tags, position) '
-                'VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM attachments WHERE statement_id = ?))',
+                'VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1000 FROM attachments WHERE statement_id = ?))',
                 (statement_id, title, att_type, content, filename, '', statement_id)
             )
             conn.commit()
@@ -2127,7 +2163,24 @@ def api_tree():
         folders = conn.execute(
             'SELECT id, parent_id, name, description FROM folders WHERE domain_id = ? ORDER BY name', (domain_id,)
         ).fetchall()
-        folder_tree = build_folder_tree(conn, folders, topic_vis)
+        topic_rows = conn.execute('''
+            SELECT t.id, t.name, t.description, t.folder_id,
+                   COUNT(DISTINCT s.id) as statement_count,
+                   COUNT(DISTINCT a.id) as attachment_count
+            FROM topics t
+            LEFT JOIN statements s ON t.id = s.topic_id
+            LEFT JOIN attachments a ON s.id = a.statement_id
+            WHERE t.domain_id = ? AND t.folder_id IS NOT NULL
+            GROUP BY t.id
+            ORDER BY t.created_at DESC
+        ''', (domain_id,)).fetchall()
+        topics_by_folder = {}
+        for row in topic_rows:
+            fid = row['folder_id']
+            if fid not in topics_by_folder:
+                topics_by_folder[fid] = []
+            topics_by_folder[fid].append(dict(row))
+        folder_tree = build_folder_tree(conn, folders, topic_vis, topics_by_folder=topics_by_folder)
         # Topics with no folder (loose topics)
         loose_topics = conn.execute('''
             SELECT t.id, t.name, t.description,
@@ -2365,7 +2418,7 @@ def api_capture():
     try:
         conn.execute(
             'INSERT INTO attachments (statement_id, title, type, content, filename, tags, source_url, position) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM attachments WHERE statement_id = ?))',
+            'VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1000 FROM attachments WHERE statement_id = ?))',
             (statement_id, source_title, 'richtext', composed, None, tags, url, statement_id)
         )
         conn.commit()
@@ -2473,7 +2526,7 @@ def get_folder_subtree(conn, folder_id):
     return folder_ids, topic_ids
 
 
-def build_folder_tree(conn, folders, topic_vis='', topic_params=None):
+def build_folder_tree(conn, folders, topic_vis='', topic_params=None, topics_by_folder=None):
     """Nest a flat folder list into a tree and attach topic + aggregate counts.
 
     `folders` is any iterable of folder rows for a single domain. Each returned
@@ -2483,6 +2536,12 @@ def build_folder_tree(conn, folders, topic_vis='', topic_params=None):
     `topic_vis` is an extra SQL predicate (e.g. 'AND t.is_public = 1') appended
     to the per-folder topic query so non-owners only ever see public topics.
     `topic_params` carries any bound parameters used inside `topic_vis`.
+
+    `topics_by_folder` is an optional dict mapping `folder_id` to a list of
+    topic dicts (each with `statement_count` and `attachment_count`). When
+    supplied, the function skips per-node DB queries and uses this pre-fetched
+    data instead. This is the preferred path for callers that already have the
+    topic rows in hand.
     """
     if topic_params is None:
         topic_params = []
@@ -2507,22 +2566,27 @@ def build_folder_tree(conn, folders, topic_vis='', topic_params=None):
         else:
             roots.append(node)
 
-    # Aggregate per folder: its own topics then roll children up the tree.
-    for node in by_id.values():
-        rows = conn.execute('''
-            SELECT t.id, t.name, t.description,
-                   COUNT(DISTINCT s.id) as statement_count,
-                   COUNT(DISTINCT a.id) as attachment_count
-            FROM topics t
-            LEFT JOIN statements s ON t.id = s.topic_id
-            LEFT JOIN attachments a ON s.id = a.statement_id
-            WHERE t.folder_id = ? %s
-            GROUP BY t.id
-            ORDER BY t.created_at DESC
-        ''' % topic_vis, (node['id'],) + tuple(topic_params)).fetchall()
-        node['topics'] = [dict(r) for r in rows]
-        node['statement_count'] += sum(r['statement_count'] for r in rows)
-        node['attachment_count'] += sum(r['attachment_count'] for r in rows)
+    if topics_by_folder is not None:
+        for node in by_id.values():
+            node['topics'] = topics_by_folder.get(node['id'], [])
+            node['statement_count'] = sum(t.get('statement_count', 0) for t in node['topics'])
+            node['attachment_count'] = sum(t.get('attachment_count', 0) for t in node['topics'])
+    else:
+        for node in by_id.values():
+            rows = conn.execute('''
+                SELECT t.id, t.name, t.description,
+                       COUNT(DISTINCT s.id) as statement_count,
+                       COUNT(DISTINCT a.id) as attachment_count
+                FROM topics t
+                LEFT JOIN statements s ON t.id = s.topic_id
+                LEFT JOIN attachments a ON s.id = a.statement_id
+                WHERE t.folder_id = ? %s
+                GROUP BY t.id
+                ORDER BY t.created_at DESC
+            ''' % topic_vis, (node['id'],) + tuple(topic_params)).fetchall()
+            node['topics'] = [dict(r) for r in rows]
+            node['statement_count'] += sum(r['statement_count'] for r in rows)
+            node['attachment_count'] += sum(r['attachment_count'] for r in rows)
 
     def roll_up(node):
         for child in node['children']:
@@ -2618,27 +2682,27 @@ def move_topic():
     topic_id = request.form.get('topic_id')
     folder_id = request.form.get('folder_id') or None
     conn = get_db()
-    topic = require_topic_owner(conn, topic_id)
-    if not topic:
+    try:
+        topic = require_topic_owner(conn, topic_id)
+        if not topic:
+            flash('Topic not found')
+            return redirect(request.referrer or url_for('all_domains'))
+        domain_id = topic['domain_id']
+        # Validate the target folder belongs to this domain (topics.folder_id has no
+        # declared FK, so ownership is enforced in app code like create_topic does).
+        if folder_id:
+            folder = conn.execute(
+                'SELECT id FROM folders WHERE id = ? AND domain_id = ?',
+                (folder_id, domain_id),
+            ).fetchone()
+            if not folder:
+                flash('Folder not found in this domain')
+                return redirect(url_for('domain', domain_id=domain_id))
+        conn.execute('UPDATE topics SET folder_id = ? WHERE id = ?', (folder_id, topic_id))
+        conn.commit()
+        return redirect(url_for('domain', domain_id=domain_id))
+    finally:
         conn.close()
-        flash('Topic not found')
-        return redirect(request.referrer or url_for('all_domains'))
-    domain_id = topic['domain_id']
-    # Validate the target folder belongs to this domain (topics.folder_id has no
-    # declared FK, so ownership is enforced in app code like create_topic does).
-    if folder_id:
-        folder = conn.execute(
-            'SELECT id FROM folders WHERE id = ? AND domain_id = ?',
-            (folder_id, domain_id),
-        ).fetchone()
-        if not folder:
-            conn.close()
-            flash('Folder not found in this domain')
-            return redirect(url_for('domain', domain_id=domain_id))
-    conn.execute('UPDATE topics SET folder_id = ? WHERE id = ?', (folder_id, topic_id))
-    conn.commit()
-    conn.close()
-    return redirect(url_for('domain', domain_id=domain_id))
 
 
 @app.route('/move_statement/<int:statement_id>', methods=['POST'])
@@ -2655,7 +2719,11 @@ def move_statement(statement_id):
       - The target topic must belong to the statement's current domain; cross-
         domain moves are rejected because a topic is domain-scoped.
     """
-    to_topic_id = request.form.get('to_topic_id')
+    try:
+        to_topic_id = int(request.form.get('to_topic_id'))
+    except (TypeError, ValueError):
+        flash('Invalid target topic')
+        return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
     stmt = require_statement_owner(conn, statement_id)
     if not stmt:
@@ -2680,7 +2748,7 @@ def move_statement(statement_id):
     max_pos = conn.execute(
         'SELECT MAX(position) AS m FROM statements WHERE topic_id = ?', (to_topic_id,)
     ).fetchone()['m']
-    next_pos = (max_pos or 0) + 1
+    next_pos = (max_pos or 0) + 1000
     conn.execute(
         'UPDATE statements SET topic_id = ?, position = ? WHERE id = ?',
         (to_topic_id, next_pos, statement_id),
@@ -2703,7 +2771,11 @@ def move_attachment(attachment_id):
         target statement must belong to the asset's current topic. Cross-topic
         asset moves are out of scope (use the statement Move for that).
     """
-    to_statement_id = request.form.get('to_statement_id')
+    try:
+        to_statement_id = int(request.form.get('to_statement_id'))
+    except (TypeError, ValueError):
+        flash('Invalid target statement')
+        return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
     att = conn.execute('SELECT a.*, t.user_id FROM attachments a JOIN statements s ON a.statement_id = s.id JOIN topics t ON s.topic_id = t.id WHERE a.id = ?', (attachment_id,)).fetchone()
     if not att or att['user_id'] != g.user['id']:
@@ -2730,7 +2802,7 @@ def move_attachment(attachment_id):
     max_pos = conn.execute(
         'SELECT MAX(position) AS m FROM attachments WHERE statement_id = ?', (to_statement_id,)
     ).fetchone()['m']
-    next_pos = (max_pos or 0) + 1
+    next_pos = (max_pos or 0) + 1000
     conn.execute(
         'UPDATE attachments SET statement_id = ?, position = ? WHERE id = ?',
         (to_statement_id, next_pos, attachment_id),
@@ -2776,7 +2848,7 @@ def duplicate_statement(statement_id):
     max_pos = conn.execute(
         'SELECT MAX(position) AS m FROM statements WHERE topic_id = ?', (topic_id,)
     ).fetchone()['m']
-    next_pos = (max_pos or 0) + 1
+    next_pos = (max_pos or 0) + 1000
     try:
         cursor = conn.execute(
             "INSERT INTO statements (topic_id, text, position) VALUES (?, 'Copy of ' || ?, ?)",
@@ -2818,7 +2890,7 @@ def duplicate_attachment(attachment_id):
         'SELECT MAX(position) AS m FROM attachments WHERE statement_id = ?',
         (statement_id,),
     ).fetchone()['m']
-    next_pos = (max_pos or 0) + 1
+    next_pos = (max_pos or 0) + 1000
     try:
         # _copy_attachment reuses the source position; override it afterwards so
         # the copy lands at the end of the same statement's asset list.
@@ -2841,43 +2913,43 @@ def duplicate_attachment(attachment_id):
 @login_required
 def duplicate_folder(folder_id):
     conn = get_db()
-    folder = conn.execute('SELECT f.* FROM folders f WHERE f.id = ?', (folder_id,)).fetchone()
-    if not folder or folder['user_id'] != g.user['id']:
-        conn.close()
-        flash('Folder not found')
-        return redirect(request.referrer or url_for('all_domains'))
-    domain_id = folder['domain_id']
-
-    def copy_subtree(old_fid, new_parent_id):
-        """Recursively copy a folder and its whole subtree, parent before child."""
-        src = conn.execute('SELECT * FROM folders WHERE id = ?', (old_fid,)).fetchone()
-        cursor = conn.execute(
-            "INSERT INTO folders (domain_id, parent_id, name, description, user_id, created_at) "
-            "VALUES (?, ?, 'Copy of ' || ?, ?, ?, ?)",
-            (domain_id, new_parent_id, src['name'], src['description'], src['user_id'], src['created_at']),
-        )
-        new_fid = cursor.lastrowid
-        src_topics = conn.execute(
-            'SELECT * FROM topics WHERE folder_id = ?', (old_fid,)
-        ).fetchall()
-        for src_topic in src_topics:
-            _copy_topic(conn, src_topic, new_fid)
-        children = conn.execute(
-            'SELECT id FROM folders WHERE parent_id = ?', (old_fid,)
-        ).fetchall()
-        for child in children:
-            copy_subtree(child['id'], new_fid)
-
     try:
-        copy_subtree(folder_id, folder['parent_id'])
-        conn.commit()
-    except sqlite3.IntegrityError:
-        conn.rollback()
-        conn.close()
-        flash('Could not duplicate this folder')
+        folder = conn.execute('SELECT f.* FROM folders f WHERE f.id = ?', (folder_id,)).fetchone()
+        if not folder or folder['user_id'] != g.user['id']:
+            flash('Folder not found')
+            return redirect(request.referrer or url_for('all_domains'))
+        domain_id = folder['domain_id']
+
+        def copy_subtree(old_fid, new_parent_id):
+            """Recursively copy a folder and its whole subtree, parent before child."""
+            src = conn.execute('SELECT * FROM folders WHERE id = ?', (old_fid,)).fetchone()
+            cursor = conn.execute(
+                "INSERT INTO folders (domain_id, parent_id, name, description, user_id, created_at) "
+                "VALUES (?, ?, 'Copy of ' || ?, ?, ?, ?)",
+                (domain_id, new_parent_id, src['name'], src['description'], src['user_id'], src['created_at']),
+            )
+            new_fid = cursor.lastrowid
+            src_topics = conn.execute(
+                'SELECT * FROM topics WHERE folder_id = ?', (old_fid,)
+            ).fetchall()
+            for src_topic in src_topics:
+                _copy_topic(conn, src_topic, new_fid)
+            children = conn.execute(
+                'SELECT id FROM folders WHERE parent_id = ?', (old_fid,)
+            ).fetchall()
+            for child in children:
+                copy_subtree(child['id'], new_fid)
+
+        try:
+            copy_subtree(folder_id, folder['parent_id'])
+            conn.commit()
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            flash('Could not duplicate this folder')
+            return redirect(url_for('domain', domain_id=domain_id))
         return redirect(url_for('domain', domain_id=domain_id))
-    conn.close()
-    return redirect(url_for('domain', domain_id=domain_id))
+    finally:
+        conn.close()
 
 
 @app.route('/update_topic', methods=['POST'])

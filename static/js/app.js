@@ -520,15 +520,6 @@ function buildLink(url, text) {
 }
 
 // --- Asset kind mapping (mirrors asset_kind() in app.py) ---
-const TYPE_TO_KIND = {
-    link: 'link',
-    text: 'richtext',
-    richtext: 'richtext',
-    image: 'image',
-    video: 'video',
-    table: 'table',
-    document: 'file'
-};
 const TABLE_EXTENSIONS = ['csv', 'tsv', 'xls', 'xlsx', 'ods'];
 
 // Inline SVG markup for each asset kind. Mirrors the per-kind <svg> files in
@@ -548,7 +539,8 @@ function assetIconSvg(kind) {
 }
 
 function assetKind(type, filename) {
-    let kind = TYPE_TO_KIND[type] || 'file';
+    const mapping = window.COMPENDIUM_ASSET_KINDS || {};
+    let kind = mapping[type] || 'file';
     if (kind === 'file' && filename && filename.indexOf('.') !== -1) {
         const ext = filename.split('.').pop().toLowerCase();
         if (TABLE_EXTENSIONS.indexOf(ext) !== -1) return 'table';

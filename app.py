@@ -2904,7 +2904,8 @@ def public_directory():
 
 if __name__ == '__main__':
     init_db()
-    app.run(debug=True, port=10000)
+    debug = os.environ.get('FLASK_DEBUG', '1') == '1'
+    app.run(debug=debug, port=10000)
 else:
     # Under a WSGI server (gunicorn app:app) the __main__ guard never runs, so
     # the schema migration and bootstrapping must happen at import time or new

@@ -123,6 +123,51 @@ modals and different labels on purpose. Keep the labels unambiguous if either is
   when the card's Move button is clicked. The current statement's `<option>` is disabled to
   prevent a no-op self-move.
 
+## Deployment (PythonAnywhere)
+
+The app is served via WSGI (not the dev server). `app.py` guards its `app.run()`
+behind `if __name__ == '__main__'` and runs `init_db()` at import time, so a
+fresh clone boots cleanly under a WSGI server.
+
+1. **Push to a Git host** (GitHub/GitLab/Bitbucket):
+   ```bash
+   git add -A && git commit -m "deploy" && git push origin main
+   ```
+   `data/`, `uploads/`, `venv/`, and `__pycache__` are gitignored, so only
+   source is pushed.
+
+2. **On PythonAnywhere** (Bash console), clone and set up the venv once:
+   ```bash
+   cd ~
+   git clone https://github.com/<you>/compendium.git
+   cd compendium
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+
+3. **Web tab** — set:
+   - Source code / Working directory: `/home/<username>/compendium`
+   - WSGI file: paste the contents of `wsgi.py` (replacing `<username>`), or
+     point it at `/home/<username>/compendium/wsgi.py`.
+
+4. **Update workflow** (repeat for every change):
+   ```bash
+   cd ~/compendium
+   git pull origin main
+   source venv/bin/activate
+   pip install -r requirements.txt   # only if requirements.txt changed
+   ```
+   Then click **Reload `<username>.pythonanywhere.com`** in the Web tab.
+
+### Configuration for production
+- Set the `COMPANION_SECRET_KEY` environment variable to a strong random value
+  (the app falls back to a dev key otherwise).
+- Set `FLASK_DEBUG=0` if you ever run `app.py` directly in production.
+- There is **no authentication layer** — do not expose publicly without adding
+  access control.
+
 ## Notes
 
 - There is currently **no authentication layer** — the dashboard identity block is a

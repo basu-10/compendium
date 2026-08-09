@@ -7,6 +7,9 @@ import shutil
 import csv
 import io
 import re
+import zipfile
+import tempfile
+import json
 import uuid
 import secrets
 import hashlib
@@ -3058,10 +3061,273 @@ def user_public(username):
         JOIN domains d ON t.domain_id = d.id
         WHERE t.user_id = ? AND t.is_public = 1
         ORDER BY t.created_at DESC
-    ''', (user['id'],)).fetchall()
+    ''', (user['id'],)).fetchone()
     conn.close()
     return render_template('user_public.html', user=user, topics=topics)
 
+
+# ---------------------------------------------------------------------------
+# Account export / import (whole account, not individual folders or topics)
+# ---------------------------------------------------------------------------
+EXPORT_FORMAT = 'compendium-account'
+EXPORT_VERSION = 1
+
+
+def _account_export_rows(conn, uid):
+    """Collect every row owned by `uid` across the account's tables.
+
+    Returns a dict of plain-dict lists keyed by table, so the manifest is a
+    faithful, serializable snapshot. Attachment `content` is included verbatim
+    (it holds text for content-only kinds and a short URL for file-backed kinds).
+    """
+    folders = [dict(r) for r in conn.execute(
+        'SELECT id, domain_id, parent_id, name, description, is_public, created_at '
+        'FROM folders WHERE user_id = ? ORDER BY id', (uid,)).fetchall()]
+    topics = [dict(r) for r in conn.execute('''
+        SELECT t.id, t.domain_id, t.folder_id, t.name, t.description,
+               t.is_public, t.created_at
+        FROM topics t WHERE t.user_id = ? ORDER BY t.id
+    ''', (uid,)).fetchall()]
+    statements = [dict(r) for r in conn.execute('''
+        SELECT s.id, s.topic_id, s.text, s.created_at, s.position
+        FROM statements s
+        JOIN topics t ON s.topic_id = t.id
+        WHERE t.user_id = ? ORDER BY s.id
+    ''', (uid,)).fetchall()]
+    attachments = [dict(r) for r in conn.execute('''
+        SELECT a.id, a.statement_id, a.title, a.type, a.content, a.filename,
+               a.source_url, a.created_at, a.position, a.tags
+        FROM attachments a
+        JOIN statements s ON a.statement_id = s.id
+        JOIN topics t ON s.topic_id = t.id
+        WHERE t.user_id = ? ORDER BY a.id
+    ''', (uid,)).fetchall()]
+    return {
+        'folders': folders,
+        'topics': topics,
+        'statements': statements,
+        'attachments': attachments,
+    }
+
+
+@app.route('/account/export')
+@login_required
+def account_export():
+    """Stream a .zip of the logged-in user's entire account.
+
+    The archive contains `manifest.json` (all folder/topic/statement/attachment
+    rows, with old ids preserved so they can be remapped on import) plus a copy
+    of every uploaded attachment file referenced by the manifest.
+    """
+    uid = g.user['id']
+    conn = get_db()
+    try:
+        rows = _account_export_rows(conn, uid)
+    finally:
+        conn.close()
+
+    manifest = {
+        'format': EXPORT_FORMAT,
+        'version': EXPORT_VERSION,
+        'exported_at': datetime.now().isoformat(),
+        'username': g.user['username'],
+        **rows,
+    }
+
+    # Collect the set of uploaded files referenced by file-backed attachments.
+    # File paths are stored as "uploads/<filename>" in `content`; anything that
+    # resolves inside the upload folder is bundled.
+    export_dir = app.config['UPLOAD_FOLDER']
+    referenced_files = {}
+    for att in rows['attachments']:
+        fname = att.get('filename')
+        if not fname:
+            continue
+        src = os.path.join(export_dir, fname)
+        if os.path.isfile(src):
+            # Namespaced under files/ to avoid clobbering manifest.json.
+            referenced_files['files/' + fname] = src
+
+    mem = io.BytesIO()
+    with zipfile.ZipFile(mem, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr('manifest.json', json.dumps(manifest, default=str, indent=2))
+        for arcname, src in referenced_files.items():
+            try:
+                zf.write(src, arcname)
+            except OSError:
+                logger.warning('export: skipped missing file %s', src)
+    mem.seek(0)
+
+    stamp = datetime.now().strftime('%Y%m%d')
+    download_name = f'compendium-export-{g.user["username"]}-{stamp}.zip'
+    return send_file(
+        mem,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name=download_name,
+    )
+
+
+@app.route('/account/import', methods=['POST'])
+@login_required
+def account_import():
+    """Restore an account archive exported by /account/export.
+
+    Reads `manifest.json` from the uploaded zip, recreates the owner's
+    folders/topics/statements/attachments under the current user, remapping old
+    ids to freshly assigned ones, and copies bundled files back into the upload
+    folder. The archive is validated: an unrecognized format or manifest is
+    rejected with a 400 so a stray zip can never corrupt the database.
+    """
+    uid = g.user['id']
+    upload = request.files.get('archive')
+    if not upload or not upload.filename:
+        return jsonify({'ok': False, 'message': 'No archive file provided.'}), 400
+
+    try:
+        data = upload.read()
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile:
+        return jsonify({'ok': False, 'message': 'File is not a valid zip archive.'}), 400
+
+    bad_names = zf.testzip()
+    if bad_names is not None:
+        return jsonify({'ok': False, 'message': 'Archive is corrupted.'}), 400
+
+    try:
+        manifest_bytes = zf.read('manifest.json')
+    except KeyError:
+        return jsonify({'ok': False, 'message': 'Archive is missing manifest.json.'}), 400
+
+    try:
+        manifest = json.loads(manifest_bytes)
+    except (ValueError, TypeError):
+        return jsonify({'ok': False, 'message': 'manifest.json is not valid JSON.'}), 400
+
+    if manifest.get('format') != EXPORT_FORMAT:
+        return jsonify({'ok': False, 'message': 'Unrecognized archive format.'}), 400
+
+    folders = manifest.get('folders') or []
+    topics = manifest.get('topics') or []
+    statements = manifest.get('statements') or []
+    attachments = manifest.get('attachments') or []
+
+    # Only restore content that still belongs to a domain that exists, and only
+    # the four known tables, so a tampered manifest cannot inject unknown fields
+    # or reference arbitrary tables.
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        valid_domains = {r[0] for r in cursor.execute('SELECT id FROM domains').fetchall()}
+
+        folder_id_map = {}
+        for f in folders:
+            domain_id = f.get('domain_id')
+            if domain_id not in valid_domains:
+                continue
+            parent_old = f.get('parent_id')
+            cursor.execute('''
+                INSERT INTO folders (domain_id, parent_id, name, description, is_public, user_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (
+                domain_id,
+                folder_id_map.get(parent_old) if parent_old is not None else None,
+                f.get('name', 'Imported folder'),
+                f.get('description') or '',
+                1 if f.get('is_public') else 0,
+                uid,
+            ))
+            folder_id_map[f['id']] = cursor.lastrowid
+
+        topic_id_map = {}
+        for t in topics:
+            domain_id = t.get('domain_id')
+            if domain_id not in valid_domains:
+                continue
+            folder_old = t.get('folder_id')
+            cursor.execute('''
+                INSERT INTO topics (domain_id, folder_id, name, description, is_public, user_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (
+                domain_id,
+                folder_id_map.get(folder_old) if folder_old is not None else None,
+                t.get('name', 'Imported topic'),
+                t.get('description') or '',
+                1 if t.get('is_public') else 0,
+                uid,
+            ))
+            topic_id_map[t['id']] = cursor.lastrowid
+
+        statement_id_map = {}
+        for s in statements:
+            topic_old = s.get('topic_id')
+            new_topic = topic_id_map.get(topic_old)
+            if new_topic is None:
+                continue
+            cursor.execute('''
+                INSERT INTO statements (topic_id, text, position, created_at)
+                VALUES (?, ?, ?, ?)
+            ''', (
+                new_topic,
+                s.get('text', ''),
+                s.get('position', 0) or 0,
+                s.get('created_at') or datetime.now().isoformat(),
+            ))
+            statement_id_map[s['id']] = cursor.lastrowid
+
+        import_dir = app.config['UPLOAD_FOLDER']
+        os.makedirs(import_dir, exist_ok=True)
+        att_count = 0
+        for a in attachments:
+            stmt_old = a.get('statement_id')
+            new_stmt = statement_id_map.get(stmt_old)
+            if new_stmt is None:
+                continue
+            fname = a.get('filename')
+            # If a bundled file exists, stage it into the upload folder under a
+            # unique name to avoid overwriting an existing upload with the same
+            # name.
+            new_filename = None
+            if fname:
+                bundled = 'files/' + fname
+                names = set(zf.namelist())
+                if bundled in names:
+                    new_filename = f"{uuid.uuid4().hex}_{fname}"
+                    try:
+                        with zf.open(bundled) as src, open(os.path.join(import_dir, new_filename), 'wb') as dst:
+                            shutil.copyfileobj(src, dst)
+                    except (OSError, KeyError):
+                        new_filename = None
+            cursor.execute('''
+                INSERT INTO attachments
+                    (statement_id, title, type, content, filename, source_url, position, tags, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                new_stmt,
+                a.get('title', 'Imported attachment'),
+                a.get('type', 'text'),
+                a.get('content', ''),
+                new_filename,
+                a.get('source_url') or None,
+                a.get('position', 0) or 0,
+                a.get('tags') or None,
+                a.get('created_at') or datetime.now().isoformat(),
+            ))
+            att_count += 1
+
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        logger.exception('account import failed: %s', exc)
+        return jsonify({'ok': False, 'message': 'Import failed: ' + str(exc)}), 500
+    finally:
+        conn.close()
+
+    return jsonify({
+        'ok': True,
+        'message': f"Imported {len(topic_id_map)} topics, "
+                   f"{len(statement_id_map)} statements, {att_count} attachments.",
+    })
 
 
 if __name__ == '__main__':

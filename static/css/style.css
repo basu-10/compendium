@@ -1215,13 +1215,58 @@ p {
     background-color: var(--bg-surface);
     width: 100%;
     max-width: 600px;
-    padding: 1.5rem;
+    padding: 0;
     position: relative;
     max-height: 90vh;
     overflow-y: auto;
     border-radius: 12px;
     box-shadow: var(--shadow-md);
     border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+}
+
+/* Standardized modal sections. Every modal (settings + the base_modal system)
+   shares this header/body/footer layout so they look identical. The close
+   button is absolutely positioned in the header's top-right corner. */
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.modal-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--border);
+}
+
+/* Legacy modals used <h3> directly inside .modal-content without a header
+   wrapper; keep it padded so it lines up with the new header spacing. */
+.modal-content > h3 {
+    padding: 1.25rem 1.5rem 0;
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
 }
 
 .close-modal {
@@ -2920,15 +2965,19 @@ body.theme-modern .topic .add-row {
     }
 }
 
-/* Settings modal: layout/theme picker */
+/* Settings modal: layout/theme picker + data (export/import) */
 .settings-modal {
-    max-width: 420px;
+    max-width: 480px;
 }
 
 .settings-group {
     border: none;
-    margin: 0;
+    margin: 0 0 1.5rem;
     padding: 0;
+}
+
+.settings-group:last-child {
+    margin-bottom: 0;
 }
 
 .settings-group legend {
@@ -2938,6 +2987,7 @@ body.theme-modern .topic .add-row {
     letter-spacing: 0.05em;
     color: var(--text-secondary);
     margin-bottom: 0.75rem;
+    padding: 0;
 }
 
 .theme-option {
@@ -2976,6 +3026,28 @@ body.theme-modern .topic .add-row {
 .theme-option-desc {
     font-size: 0.8rem;
     color: var(--text-secondary);
+}
+
+/* Data group: stacked action buttons for export/import of the whole account. */
+.settings-data-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.settings-data-actions .btn-block {
+    width: 100%;
+    justify-content: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.settings-data-note {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    margin: 0.4rem 0 0;
+    line-height: 1.4;
 }
 
 /* ===========================================================================

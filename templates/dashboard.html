@@ -18,6 +18,7 @@
         </div>
         <div class="profile-actions">
             <button class="btn-secondary" type="button">Edit profile</button>
+            <a href="{{ url_for('user_public', username=current_user.username) }}" class="btn-secondary">View Public Page</a>
             <a href="{{ url_for('all_domains') }}" class="btn-primary profile-cta">Go to domains</a>
         </div>
     </section>

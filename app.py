@@ -165,27 +165,12 @@ def login_required(view):
     return wrapped
 
 
-def is_owner(domain_user_id):
-    """True when the current user owns the domain behind `domain_user_id`."""
-    return g.user is not None and g.user['id'] == domain_user_id
-
-
-def require_domain_owner(conn, domain_id):
-    """Return the domain row if the current user owns it, else None."""
-    if g.user is None:
-        return None
-    domain = conn.execute('SELECT * FROM domains WHERE id = ?', (domain_id,)).fetchone()
-    if domain is None or domain['user_id'] != g.user['id']:
-        return None
-    return domain
-
-
 def require_topic_owner(conn, topic_id):
-    """Return the topic row if the current user owns its domain, else None."""
+    """Return the topic row if the current user owns it, else None."""
     if g.user is None:
         return None
     topic = conn.execute(
-        'SELECT t.*, d.user_id FROM topics t JOIN domains d ON t.domain_id = d.id WHERE t.id = ?',
+        'SELECT t.* FROM topics t WHERE t.id = ?',
         (topic_id,),
     ).fetchone()
     if topic is None or topic['user_id'] != g.user['id']:
@@ -193,14 +178,26 @@ def require_topic_owner(conn, topic_id):
     return topic
 
 
+def require_folder_owner(conn, folder_id):
+    """Return the folder row if the current user owns it, else None."""
+    if g.user is None:
+        return None
+    folder = conn.execute(
+        'SELECT f.* FROM folders f WHERE f.id = ?',
+        (folder_id,),
+    ).fetchone()
+    if folder is None or folder['user_id'] != g.user['id']:
+        return None
+    return folder
+
+
 def require_statement_owner(conn, statement_id):
-    """Return the statement row if the current user owns its domain, else None."""
+    """Return the statement row if the current user owns its topic, else None."""
     if g.user is None:
         return None
     stmt = conn.execute(
-        'SELECT s.*, d.user_id FROM statements s '
-        'JOIN topics t ON s.topic_id = t.id '
-        'JOIN domains d ON t.domain_id = d.id WHERE s.id = ?',
+        'SELECT s.*, t.user_id FROM statements s '
+        'JOIN topics t ON s.topic_id = t.id WHERE s.id = ?',
         (statement_id,),
     ).fetchone()
     if stmt is None or stmt['user_id'] != g.user['id']:
@@ -211,20 +208,11 @@ def require_statement_owner(conn, statement_id):
 def visibility_clause():
     """SQL fragment + params limiting domain rows to what the viewer may see.
 
-    Logged in: own domains OR any domain containing a public topic/folder.
-    Logged out: only domains that contain at least one public topic/folder.
-
-    The domain is reachable publicly when *any* of its topics or folders is
-    marked public, because a public topic always links back to its domain and
-    a public folder is browsable within the domain page.
+    Domains are shared, always-visible category labels with no owner, so every
+    domain is reachable by everyone (logged in or not). Visibility of the
+    topics/folders *inside* a domain is decided per row in the domain route.
     """
-    if g.user is not None:
-        cond = '(d.user_id = ? OR d.id IN (SELECT domain_id FROM topics WHERE is_public = 1) OR d.id IN (SELECT domain_id FROM folders WHERE is_public = 1))'
-        params = [g.user['id']]
-    else:
-        cond = '(d.id IN (SELECT domain_id FROM topics WHERE is_public = 1) OR d.id IN (SELECT domain_id FROM folders WHERE is_public = 1))'
-        params = []
-    return cond, params
+    return ('1=1', [])
 
 
 def owner_username(conn, user_id):
@@ -344,10 +332,8 @@ def init_db():
 
         CREATE TABLE IF NOT EXISTS domains (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
             name TEXT NOT NULL UNIQUE,
-            description TEXT,
-            FOREIGN KEY (user_id) REFERENCES users (id)
+            description TEXT
         );
         
         CREATE TABLE IF NOT EXISTS topics (
@@ -409,7 +395,10 @@ def init_db():
     _ensure_column(conn, cursor, 'statements', 'position', 'INTEGER DEFAULT 0')
     _ensure_column(conn, cursor, 'attachments', 'position', 'INTEGER DEFAULT 0')
     _ensure_column(conn, cursor, 'attachments', 'tags', 'TEXT')
-    _ensure_column(conn, cursor, 'domains', 'user_id', 'INTEGER')
+    # Topics and folders carry their own owner (the creator). Domains are shared,
+    # owner-less category labels, so `domains.user_id` has been dropped.
+    _ensure_column(conn, cursor, 'topics', 'user_id', 'INTEGER')
+    _ensure_column(conn, cursor, 'folders', 'user_id', 'INTEGER')
     _ensure_column(conn, cursor, 'topics', 'is_public', 'INTEGER DEFAULT 0')
     _ensure_column(conn, cursor, 'folders', 'is_public', 'INTEGER DEFAULT 0')
     _backfill_positions(conn, cursor, 'statements', 'topic_id')
@@ -420,6 +409,9 @@ def init_db():
     # integrity is enforced in app code (see create_topic/update_topic) and the
     # column is nullable so a topic may sit directly under a domain if needed.
     _ensure_column(conn, cursor, 'topics', 'folder_id', 'INTEGER')
+
+    # Remove the legacy per-domain owner column; domains are shared categories.
+    _drop_domains_user_id(conn, cursor)
 
     _migrate_domains(conn, cursor)
 
@@ -436,14 +428,16 @@ def init_db():
         seed_owner_id = None
 
     cursor.execute('SELECT COUNT(*) FROM domains')
-    if cursor.fetchone()[0] == 0 and seed_owner_id is not None:
-        cursor.executemany('INSERT INTO domains (user_id, name, description) VALUES (?, ?, ?)', [
-            (seed_owner_id, 'Tech, Engineering & Systems', 'Codebases, software patterns, system architecture, AI implementations.'),
-            (seed_owner_id, 'Quantitative & Data Science', 'Mathematical proofs, statistical models, datasets, algorithmic logic.'),
-            (seed_owner_id, 'Market, Business & Corporate', 'Equity research, 10-K teardowns, macro dynamics, industry analyses.'),
-            (seed_owner_id, 'Empirical & Natural Science', 'Physical/biological scientific studies, experimental evidence, papers.'),
-            (seed_owner_id, 'Policy, Law & Governance', 'Regulatory frameworks, sociopolitical structures, legal documents.'),
-            (seed_owner_id, 'Culture, History & Arts', 'Historical events, literary criticism, media analysis, philosophical texts.')
+    if cursor.fetchone()[0] == 0:
+        # Domains are shared, owner-less categories. Only the seed bootstrap
+        # inserts them; no user may create, edit, or delete a domain.
+        cursor.executemany('INSERT INTO domains (name, description) VALUES (?, ?)', [
+            ('Tech, Engineering & Systems', 'Codebases, software patterns, system architecture, AI implementations.'),
+            ('Quantitative & Data Science', 'Mathematical proofs, statistical models, datasets, algorithmic logic.'),
+            ('Market, Business & Corporate', 'Equity research, 10-K teardowns, macro dynamics, industry analyses.'),
+            ('Empirical & Natural Science', 'Physical/biological scientific studies, experimental evidence, papers.'),
+            ('Policy, Law & Governance', 'Regulatory frameworks, sociopolitical structures, legal documents.'),
+            ('Culture, History & Arts', 'Historical events, literary criticism, media analysis, philosophical texts.')
         ])
 
     # Index foreign-key child columns so cascade deletes and the per-delete
@@ -458,6 +452,22 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_topics_folder_id ON topics (folder_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_folders_parent_id ON folders (parent_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_folders_domain_id ON folders (domain_id)')
+
+    # Reassign any owner-less content (legacy rows created before ownership
+    # moved to topics/folders, or a fresh seed) to the seed account `asesh` so
+    # nothing is orphaned. Statements and attachments inherit ownership through
+    # their topic, so only topics/folders need a direct owner here. Guarded to
+    # only touch NULL rows, making it safe to run on every startup.
+    cursor.execute('SELECT id FROM users WHERE username = ?', ('asesh',))
+    seed_row = cursor.fetchone()
+    if seed_row is not None:
+        seed_owner_id = seed_row['id']
+        cursor.execute(
+            'UPDATE topics SET user_id = ? WHERE user_id IS NULL', (seed_owner_id,)
+        )
+        cursor.execute(
+            'UPDATE folders SET user_id = ? WHERE user_id IS NULL', (seed_owner_id,)
+        )
 
     conn.commit()
     conn.close()
@@ -609,22 +619,12 @@ def _migrate_domains(conn, cursor):
     }
 
     # Ensure each canonical domain exists with its current description. Domains
-    # created by the migration are owned by the seed account so they are never
-    # orphaned (NULL user_id would make them unreachable under per-user scope).
-    cursor.execute('SELECT id FROM users WHERE username = ?', ('asesh',))
-    seed_row = cursor.fetchone()
-    seed_owner_id = seed_row['id'] if seed_row else None
+    # are shared, owner-less categories; they carry no user_id at all.
     for name, (description, _legacy) in targets.items():
-        if seed_owner_id is not None:
-            cursor.execute(
-                "INSERT OR IGNORE INTO domains (user_id, name, description) VALUES (?, ?, ?)",
-                (seed_owner_id, name, description),
-            )
-        else:
-            cursor.execute(
-                "INSERT OR IGNORE INTO domains (name, description) VALUES (?, ?)",
-                (name, description),
-            )
+        cursor.execute(
+            "INSERT OR IGNORE INTO domains (name, description) VALUES (?, ?)",
+            (name, description),
+        )
 
     # Map every legacy source domain to its canonical target, then merge topics
     # and drop the legacy row.
@@ -644,6 +644,48 @@ def _migrate_domains(conn, cursor):
                 (target_id, source_id),
             )
             cursor.execute("DELETE FROM domains WHERE id = ?", (source_id,))
+
+
+def _drop_domains_user_id(conn, cursor):
+    """Remove the legacy `domains.user_id` owner column via table rebuild.
+
+    Ownership now lives on topics/folders, and domains are shared, owner-less
+    category labels. SQLite ALTER cannot drop a column on the shipped SQLite
+    version, so rebuild the table (create new, copy id/name/description, drop
+    old, rename) guarded by a PRAGMA check so it runs exactly once.
+    """
+    cursor.execute("PRAGMA table_info(domains)")
+    if not any(row['name'] == 'user_id' for row in cursor.fetchall()):
+        return
+    conn.commit()
+    prior_isolation = conn.isolation_level
+    conn.isolation_level = None
+    cursor.execute('PRAGMA foreign_keys = OFF')
+    try:
+        cursor.execute('BEGIN IMMEDIATE')
+        try:
+            cursor.execute('DROP TABLE IF EXISTS domains_new')
+            cursor.execute('''CREATE TABLE domains_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT
+            )''')
+            cursor.execute(
+                'INSERT INTO domains_new (id, name, description) '
+                'SELECT id, name, description FROM domains'
+            )
+            cursor.execute('DROP TABLE domains')
+            cursor.execute('ALTER TABLE domains_new RENAME TO domains')
+            violations = cursor.execute("PRAGMA foreign_key_check('domains')").fetchall()
+            if violations:
+                raise sqlite3.IntegrityError(f'foreign key violations after domains rebuild: {violations}')
+            cursor.execute('COMMIT')
+        except Exception:
+            cursor.execute('ROLLBACK')
+            raise
+    finally:
+        cursor.execute('PRAGMA foreign_keys = ON')
+        conn.isolation_level = prior_isolation
 
 
 @app.route('/')
@@ -700,28 +742,26 @@ def all_domains():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    """Per-user profile / dashboard scoped to the logged-in account's domains."""
+    """Per-user profile / dashboard scoped to the logged-in account's content."""
     conn = get_db()
     uid = g.user['id']
     stats = conn.execute('''
         SELECT
-            (SELECT COUNT(*) FROM domains WHERE user_id = ?) AS domain_count,
-            (SELECT COUNT(*) FROM topics t JOIN domains d ON t.domain_id = d.id WHERE d.user_id = ?) AS topic_count,
+            (SELECT COUNT(*) FROM domains) AS domain_count,
+            (SELECT COUNT(*) FROM topics WHERE user_id = ?) AS topic_count,
             (SELECT COUNT(*) FROM statements s
-               JOIN topics t ON s.topic_id = t.id
-               JOIN domains d ON t.domain_id = d.id WHERE d.user_id = ?) AS statement_count,
+               JOIN topics t ON s.topic_id = t.id WHERE t.user_id = ?) AS statement_count,
             (SELECT COUNT(*) FROM attachments a
                JOIN statements s ON a.statement_id = s.id
-               JOIN topics t ON s.topic_id = t.id
-               JOIN domains d ON t.domain_id = d.id WHERE d.user_id = ?) AS attachment_count
-    ''', (uid, uid, uid, uid)).fetchone()
+               JOIN topics t ON s.topic_id = t.id WHERE t.user_id = ?) AS attachment_count
+    ''', (uid, uid, uid)).fetchone()
     recent_topics = conn.execute('''
         SELECT t.id, t.name, d.name AS domain_name,
                COUNT(DISTINCT s.id) AS statement_count
         FROM topics t
         JOIN domains d ON t.domain_id = d.id
         LEFT JOIN statements s ON s.topic_id = t.id
-        WHERE d.user_id = ?
+        WHERE t.user_id = ?
         GROUP BY t.id
         ORDER BY t.created_at DESC
         LIMIT 6
@@ -737,8 +777,7 @@ def dashboard():
             FROM attachments a
             JOIN statements s ON a.statement_id = s.id
             JOIN topics t ON s.topic_id = t.id
-            JOIN domains d ON t.domain_id = d.id
-            WHERE d.user_id = ?
+            WHERE t.user_id = ?
             ORDER BY a.created_at DESC
             LIMIT 6
         ) a
@@ -756,7 +795,7 @@ def dashboard():
                COALESCE(SUM(ts.statement_count), 0) AS statement_count,
                COALESCE(SUM(ts.attachment_count), 0) AS attachment_count
         FROM domains d
-        LEFT JOIN topics t ON t.domain_id = d.id
+        LEFT JOIN topics t ON t.domain_id = d.id AND t.user_id = ?
         LEFT JOIN (
             SELECT s.topic_id,
                    COUNT(DISTINCT s.id) AS statement_count,
@@ -765,7 +804,6 @@ def dashboard():
             LEFT JOIN attachments a ON a.statement_id = s.id
             GROUP BY s.topic_id
         ) ts ON ts.topic_id = t.id
-        WHERE d.user_id = ?
         GROUP BY d.id
         ORDER BY topic_count DESC, d.name
     ''', (uid,)).fetchall()
@@ -787,25 +825,23 @@ def domain(domain_id):
         conn.close()
         flash('Domain not found')
         return redirect(url_for('all_domains'))
-    # Visibility: the owner sees everything; anonymous or other users may only
-    # view the domain when it carries at least one public topic or folder.
-    if not is_owner(domain['user_id']):
-        public = conn.execute(
-            'SELECT 1 FROM topics WHERE domain_id = ? AND is_public = 1 '
-            'UNION ALL SELECT 1 FROM folders WHERE domain_id = ? AND is_public = 1 '
-            'LIMIT 1', (domain_id, domain_id)
-        ).fetchone()
-        if not public:
-            conn.close()
-            flash('You do not have access to this domain')
-            return redirect(url_for('all_domains'))
-    can_edit = is_owner(domain['user_id'])
-    owner_name = owner_username(conn, domain['user_id'])
-    # Non-owners only ever see public topics/folders; the owner sees everything.
-    topic_vis = '' if can_edit else 'AND t.is_public = 1'
-    folder_vis = '' if can_edit else 'AND f.is_public = 1'
+    # Domains are shared, always-visible category labels with no owner, so every
+    # domain is reachable by everyone (logged in or not). Visibility of the
+    # topics/folders inside is decided per row below.
+    uid = g.user['id'] if g.user is not None else None
+    if uid is not None:
+        topic_vis = 'AND (t.user_id = ? OR t.is_public = 1)'
+        topic_params = [uid]
+        folder_vis = 'AND (f.user_id = ? OR f.is_public = 1)'
+        folder_params = [uid]
+    else:
+        topic_vis = 'AND t.is_public = 1'
+        topic_params = []
+        folder_vis = 'AND f.is_public = 1'
+        folder_params = []
     # Topics with no folder (shouldn't happen post-backfill, but keep the page
-    # honest if a topic exists with folder_id NULL).
+    # honest if a topic exists with folder_id NULL). The viewer sees their own
+    # topics plus any public topic in the domain.
     loose_topics = conn.execute(f'''
         SELECT t.*,
                COUNT(DISTINCT s.id) as statement_count,
@@ -816,35 +852,41 @@ def domain(domain_id):
         WHERE t.domain_id = ? AND t.folder_id IS NULL {topic_vis}
         GROUP BY t.id
         ORDER BY t.created_at DESC
-    ''', (domain_id,)).fetchall()
-    # Folders visible to the viewer. The owner sees every folder. Non-owners see
-    # a folder when it is public OR contains (directly or anywhere beneath it) a
-    # public topic, plus the ancestor chain so the path to that topic renders.
-    if can_edit:
-        folders = conn.execute(
-            'SELECT * FROM folders WHERE domain_id = ? ORDER BY name', (domain_id,)
-        ).fetchall()
-    else:
+    ''', (domain_id,) + tuple(topic_params)).fetchall()
+    # Folders visible to the viewer: their own folders plus any public folder,
+    # plus the ancestor chain so a public topic's path renders. Logged-out users
+    # only ever see public folders.
+    if uid is not None:
         folder_ids = [r['id'] for r in conn.execute('''
             WITH RECURSIVE subtree(id) AS (
                 SELECT f.id FROM folders f
                 WHERE f.domain_id = ?
-                  AND (f.is_public = 1
-                       OR f.id IN (SELECT folder_id FROM topics WHERE is_public = 1))
+                  AND (f.user_id = ? OR f.is_public = 1)
+                UNION ALL
+                SELECT f.parent_id FROM folders f JOIN subtree s ON f.id = s.id
+                WHERE f.parent_id IS NOT NULL
+            )
+            SELECT DISTINCT id FROM subtree
+        ''', (domain_id, uid)).fetchall()]
+    else:
+        folder_ids = [r['id'] for r in conn.execute('''
+            WITH RECURSIVE subtree(id) AS (
+                SELECT f.id FROM folders f
+                WHERE f.domain_id = ? AND f.is_public = 1
                 UNION ALL
                 SELECT f.parent_id FROM folders f JOIN subtree s ON f.id = s.id
                 WHERE f.parent_id IS NOT NULL
             )
             SELECT DISTINCT id FROM subtree
         ''', (domain_id,)).fetchall()]
-        if folder_ids:
-            placeholders = ','.join('?' * len(folder_ids))
-            folders = conn.execute(
-                f'SELECT * FROM folders WHERE id IN ({placeholders}) ORDER BY name',
-                folder_ids,
-            ).fetchall()
-        else:
-            folders = []
+    if folder_ids:
+        placeholders = ','.join('?' * len(folder_ids))
+        folders = conn.execute(
+            f'SELECT * FROM folders WHERE id IN ({placeholders}) ORDER BY name',
+            folder_ids,
+        ).fetchall()
+    else:
+        folders = []
     q = request.args.get('q', '').strip()
     if q:
         # Gather every topic id in this domain (root-folder subtrees + loose).
@@ -887,7 +929,7 @@ def domain(domain_id):
         loose_topics = [t for t in loose_topics if t['id'] in matched
                         or q.lower() in (t['name'] or '').lower()
                         or q.lower() in (t['description'] or '').lower()]
-    folder_tree = build_folder_tree(conn, folders, topic_vis)
+    folder_tree = build_folder_tree(conn, folders, topic_vis, topic_params)
     # Flat, depth-indented folder list for the Move-topic <select>. Walk the
     # nested tree so parent folders always precede their children.
     all_folders = []
@@ -903,8 +945,6 @@ def domain(domain_id):
         folder_tree=folder_tree,
         all_folders=all_folders,
         loose_topics=loose_topics,
-        can_edit=can_edit,
-        owner_username=owner_name,
         q=q,
     )
 
@@ -912,19 +952,19 @@ def domain(domain_id):
 def topic(topic_id):
     conn = get_db()
     topic = conn.execute('''
-        SELECT t.*, d.name as domain_name, d.user_id as domain_user_id
+        SELECT t.*, d.name as domain_name
         FROM topics t 
         JOIN domains d ON t.domain_id = d.id 
         WHERE t.id = ?
     ''', (topic_id,)).fetchone()
     # Access: owner sees it; everyone else only when the topic is public.
-    if topic and not is_owner(topic['domain_user_id']):
+    if topic and topic['user_id'] != (g.user['id'] if g.user else None):
         if not topic['is_public']:
             conn.close()
             flash('This topic is private')
             return redirect(url_for('all_domains'))
-    can_edit = topic is not None and is_owner(topic['domain_user_id'])
-    owner_name = owner_username(conn, topic['domain_user_id']) if topic else 'unknown'
+    can_edit = topic is not None and topic['user_id'] == (g.user['id'] if g.user else None)
+    owner_name = owner_username(conn, topic['user_id']) if topic else 'unknown'
     # Walk the folder's ancestor chain (parent_id upward) to build the breadcrumb
     # path domain › … › folder. Computed here so the template only renders it.
     folder_path = []
@@ -1064,10 +1104,12 @@ def create_topic():
         flash('Domain and topic name are required')
         return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
-    domain = require_domain_owner(conn, domain_id)
+    # Domains are shared: any logged-in user may create a topic in any domain,
+    # so the only check is that the domain exists (no per-user domain gate).
+    domain = conn.execute('SELECT id FROM domains WHERE id = ?', (domain_id,)).fetchone()
     if not domain:
         conn.close()
-        flash('You do not have access to this domain')
+        flash('Domain not found')
         return redirect(url_for('all_domains'))
     # Validate any supplied folder belongs to this domain (topics.domain_id has
     # no declared FK to folders, so ownership is checked here in app code).
@@ -1078,9 +1120,10 @@ def create_topic():
         ).fetchone()
         if not folder:
             folder_id = None
+    is_public = 1 if request.form.get('is_public') else 0
     conn.execute(
-        'INSERT INTO topics (domain_id, folder_id, name, description) VALUES (?, ?, ?, ?)',
-        (domain_id, folder_id, name, description),
+        'INSERT INTO topics (domain_id, folder_id, name, description, user_id, is_public) VALUES (?, ?, ?, ?, ?, ?)',
+        (domain_id, folder_id, name, description, g.user['id'], is_public),
     )
     conn.commit()
     topic_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
@@ -1098,7 +1141,9 @@ def create_folder():
         flash('Domain and folder name are required')
         return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
-    domain = require_domain_owner(conn, domain_id)
+    # Domains are shared: any logged-in user may create a folder in any domain,
+    # so the only check is that the domain exists (no per-user domain gate).
+    domain = conn.execute('SELECT id FROM domains WHERE id = ?', (domain_id,)).fetchone()
     if not domain:
         conn.close()
         flash('Domain not found')
@@ -1111,9 +1156,10 @@ def create_folder():
         ).fetchone()
         if not parent:
             parent_id = None
+    is_public = 1 if request.form.get('is_public') else 0
     conn.execute(
-        'INSERT INTO folders (domain_id, parent_id, name, description) VALUES (?, ?, ?, ?)',
-        (domain_id, parent_id, name, description),
+        'INSERT INTO folders (domain_id, parent_id, name, description, user_id, is_public) VALUES (?, ?, ?, ?, ?, ?)',
+        (domain_id, parent_id, name, description, g.user['id'], is_public),
     )
     conn.commit()
     conn.close()
@@ -1131,7 +1177,7 @@ def update_folder():
         flash('Folder name is required')
         return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
-    folder = conn.execute('SELECT f.*, d.user_id FROM folders f JOIN domains d ON f.domain_id = d.id WHERE f.id = ?', (folder_id,)).fetchone()
+    folder = conn.execute('SELECT f.* FROM folders f WHERE f.id = ?', (folder_id,)).fetchone()
     if not folder or folder['user_id'] != g.user['id']:
         conn.close()
         flash('Folder not found')
@@ -1179,7 +1225,7 @@ def update_folder():
 @login_required
 def delete_folder(folder_id):
     conn = get_db()
-    folder = conn.execute('SELECT f.*, d.user_id FROM folders f JOIN domains d ON f.domain_id = d.id WHERE f.id = ?', (folder_id,)).fetchone()
+    folder = conn.execute('SELECT f.* FROM folders f WHERE f.id = ?', (folder_id,)).fetchone()
     if not folder or folder['user_id'] != g.user['id']:
         conn.close()
         flash('Folder not found')
@@ -1199,8 +1245,8 @@ def delete_folder(folder_id):
         rows = []
     filenames = [r['filename'] for r in rows if r['filename']]
     # `topics.folder_id` has no declared FK (SQLite cannot attach one to an
-    # ALTER-added column), so child topics must be removed explicitly, exactly
-    # like delete_domain handles topics.domain_id. The folder cascade (parent →
+    # ALTER-added column), so child topics must be removed explicitly. The folder
+    # cascade (parent →
     # child folders, and topics → statements → attachments) still runs; we just
     # delete the subtree topics first, then the folder row last.
     if subtree_topics:
@@ -1752,7 +1798,7 @@ def update_attachment():
         return redirect(request.referrer or url_for('all_domains'))
 
     conn = get_db()
-    existing = conn.execute('SELECT a.*, d.user_id FROM attachments a JOIN statements s ON a.statement_id = s.id JOIN topics t ON s.topic_id = t.id JOIN domains d ON t.domain_id = d.id WHERE a.id = ?', (attachment_id,)).fetchone()
+    existing = conn.execute('SELECT a.*, t.user_id FROM attachments a JOIN statements s ON a.statement_id = s.id JOIN topics t ON s.topic_id = t.id WHERE a.id = ?', (attachment_id,)).fetchone()
     if not existing or existing['user_id'] != g.user['id']:
         conn.close()
         flash('Attachment not found')
@@ -1831,10 +1877,9 @@ def update_attachment():
 def delete_attachment(attachment_id):
     conn = get_db()
     row = conn.execute(
-        'SELECT a.filename, a.statement_id, d.user_id FROM attachments a '
+        'SELECT a.filename, a.statement_id, t.user_id FROM attachments a '
         'JOIN statements s ON a.statement_id = s.id '
-        'JOIN topics t ON s.topic_id = t.id '
-        'JOIN domains d ON t.domain_id = d.id WHERE a.id = ?', (attachment_id,)
+        'JOIN topics t ON s.topic_id = t.id WHERE a.id = ?', (attachment_id,)
     ).fetchone()
     if not row or row['user_id'] != g.user['id']:
         conn.close()
@@ -2223,7 +2268,7 @@ def save_table(attachment_id):
     file-backed asset. A stored file is removed on disk once superseded.
     """
     conn = get_db()
-    existing = conn.execute('SELECT a.*, d.user_id FROM attachments a JOIN statements s ON a.statement_id = s.id JOIN topics t ON s.topic_id = t.id JOIN domains d ON t.domain_id = d.id WHERE a.id = ?', (attachment_id,)).fetchone()
+    existing = conn.execute('SELECT a.*, t.user_id FROM attachments a JOIN statements s ON a.statement_id = s.id JOIN topics t ON s.topic_id = t.id WHERE a.id = ?', (attachment_id,)).fetchone()
     if not existing or existing['user_id'] != g.user['id']:
         conn.close()
         return jsonify({'error': 'not found'}), 404
@@ -2306,7 +2351,7 @@ def get_folder_subtree(conn, folder_id):
     return folder_ids, topic_ids
 
 
-def build_folder_tree(conn, folders, topic_vis=''):
+def build_folder_tree(conn, folders, topic_vis='', topic_params=None):
     """Nest a flat folder list into a tree and attach topic + aggregate counts.
 
     `folders` is any iterable of folder rows for a single domain. Each returned
@@ -2315,7 +2360,10 @@ def build_folder_tree(conn, folders, topic_vis=''):
 
     `topic_vis` is an extra SQL predicate (e.g. 'AND t.is_public = 1') appended
     to the per-folder topic query so non-owners only ever see public topics.
+    `topic_params` carries any bound parameters used inside `topic_vis`.
     """
+    if topic_params is None:
+        topic_params = []
     by_id = {}
     for f in folders:
         by_id[f['id']] = {
@@ -2349,7 +2397,7 @@ def build_folder_tree(conn, folders, topic_vis=''):
             WHERE t.folder_id = ? %s
             GROUP BY t.id
             ORDER BY t.created_at DESC
-        ''' % topic_vis, (node['id'],)).fetchall()
+        ''' % topic_vis, (node['id'],) + tuple(topic_params)).fetchall()
         node['topics'] = [dict(r) for r in rows]
         node['statement_count'] += sum(r['statement_count'] for r in rows)
         node['attachment_count'] += sum(r['attachment_count'] for r in rows)
@@ -2417,10 +2465,10 @@ def _copy_topic(conn, src_topic, new_folder_id=None):
     """
     folder_id = src_topic['folder_id'] if new_folder_id is None else new_folder_id
     cursor = conn.execute(
-        "INSERT INTO topics (domain_id, folder_id, name, description, created_at) "
-        "VALUES (?, ?, 'Copy of ' || ?, ?, ?)",
+        "INSERT INTO topics (domain_id, folder_id, name, description, user_id, created_at) "
+        "VALUES (?, ?, 'Copy of ' || ?, ?, ?, ?)",
         (src_topic['domain_id'], folder_id, src_topic['name'],
-         src_topic['description'], src_topic['created_at']),
+         src_topic['description'], src_topic['user_id'], src_topic['created_at']),
     )
     new_topic_id = cursor.lastrowid
     src_statements = conn.execute(
@@ -2535,7 +2583,7 @@ def move_attachment(attachment_id):
     """
     to_statement_id = request.form.get('to_statement_id')
     conn = get_db()
-    att = conn.execute('SELECT a.*, d.user_id FROM attachments a JOIN statements s ON a.statement_id = s.id JOIN topics t ON s.topic_id = t.id JOIN domains d ON t.domain_id = d.id WHERE a.id = ?', (attachment_id,)).fetchone()
+    att = conn.execute('SELECT a.*, t.user_id FROM attachments a JOIN statements s ON a.statement_id = s.id JOIN topics t ON s.topic_id = t.id WHERE a.id = ?', (attachment_id,)).fetchone()
     if not att or att['user_id'] != g.user['id']:
         conn.close()
         flash('Asset not found')
@@ -2633,7 +2681,7 @@ def duplicate_statement(statement_id):
 @login_required
 def duplicate_attachment(attachment_id):
     conn = get_db()
-    att = conn.execute('SELECT a.*, d.user_id FROM attachments a JOIN statements s ON a.statement_id = s.id JOIN topics t ON s.topic_id = t.id JOIN domains d ON t.domain_id = d.id WHERE a.id = ?', (attachment_id,)).fetchone()
+    att = conn.execute('SELECT a.*, t.user_id FROM attachments a JOIN statements s ON a.statement_id = s.id JOIN topics t ON s.topic_id = t.id WHERE a.id = ?', (attachment_id,)).fetchone()
     if not att or att['user_id'] != g.user['id']:
         conn.close()
         flash('Asset not found')
@@ -2671,7 +2719,7 @@ def duplicate_attachment(attachment_id):
 @login_required
 def duplicate_folder(folder_id):
     conn = get_db()
-    folder = conn.execute('SELECT f.*, d.user_id FROM folders f JOIN domains d ON f.domain_id = d.id WHERE f.id = ?', (folder_id,)).fetchone()
+    folder = conn.execute('SELECT f.* FROM folders f WHERE f.id = ?', (folder_id,)).fetchone()
     if not folder or folder['user_id'] != g.user['id']:
         conn.close()
         flash('Folder not found')
@@ -2682,9 +2730,9 @@ def duplicate_folder(folder_id):
         """Recursively copy a folder and its whole subtree, parent before child."""
         src = conn.execute('SELECT * FROM folders WHERE id = ?', (old_fid,)).fetchone()
         cursor = conn.execute(
-            "INSERT INTO folders (domain_id, parent_id, name, description, created_at) "
-            "VALUES (?, ?, 'Copy of ' || ?, ?, ?)",
-            (domain_id, new_parent_id, src['name'], src['description'], src['created_at']),
+            "INSERT INTO folders (domain_id, parent_id, name, description, user_id, created_at) "
+            "VALUES (?, ?, 'Copy of ' || ?, ?, ?, ?)",
+            (domain_id, new_parent_id, src['name'], src['description'], src['user_id'], src['created_at']),
         )
         new_fid = cursor.lastrowid
         src_topics = conn.execute(
@@ -2721,7 +2769,7 @@ def update_topic():
         flash('Topic name is required')
         return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
-    topic = conn.execute('SELECT t.*, d.user_id FROM topics t JOIN domains d ON t.domain_id = d.id WHERE t.id = ?', (topic_id,)).fetchone()
+    topic = conn.execute('SELECT t.* FROM topics t WHERE t.id = ?', (topic_id,)).fetchone()
     if not topic or topic['user_id'] != g.user['id']:
         conn.close()
         flash('Topic not found')
@@ -2747,51 +2795,6 @@ def delete_topic(topic_id):
         WHERE s.topic_id = ? AND a.filename IS NOT NULL
     ''', (topic_id,)).fetchall()
     conn.execute('DELETE FROM topics WHERE id = ?', (topic_id,))
-    conn.commit()
-    conn.close()
-    for row in rows:
-        _remove_upload(row['filename'])
-    return redirect(request.referrer or url_for('all_domains'))
-
-@app.route('/update_domain', methods=['POST'])
-@login_required
-def update_domain():
-    domain_id = request.form.get('domain_id')
-    name = request.form.get('name', '').strip()
-    description = request.form.get('description', '').strip()
-    if not domain_id or not name:
-        flash('Domain name is required')
-        return redirect(request.referrer or url_for('all_domains'))
-    conn = get_db()
-    domain = require_domain_owner(conn, domain_id)
-    if not domain:
-        conn.close()
-        flash('Domain not found')
-        return redirect(request.referrer or url_for('all_domains'))
-    conn.execute('UPDATE domains SET name = ?, description = ? WHERE id = ?', (name, description, domain_id))
-    conn.commit()
-    conn.close()
-    return redirect(request.referrer or url_for('all_domains'))
-
-@app.route('/delete_domain/<int:domain_id>', methods=['POST'])
-@login_required
-def delete_domain(domain_id):
-    conn = get_db()
-    domain = require_domain_owner(conn, domain_id)
-    if not domain:
-        conn.close()
-        flash('Domain not found')
-        return redirect(request.referrer or url_for('all_domains'))
-    # `topics.domain_id` has no ON DELETE CASCADE, so with foreign keys enabled
-    # the children must be removed explicitly or the delete is rejected.
-    rows = conn.execute('''
-        SELECT a.filename FROM attachments a
-        JOIN statements s ON a.statement_id = s.id
-        JOIN topics t ON s.topic_id = t.id
-        WHERE t.domain_id = ? AND a.filename IS NOT NULL
-    ''', (domain_id,)).fetchall()
-    conn.execute('DELETE FROM topics WHERE domain_id = ?', (domain_id,))
-    conn.execute('DELETE FROM domains WHERE id = ?', (domain_id,))
     conn.commit()
     conn.close()
     for row in rows:
@@ -2898,7 +2901,7 @@ def public_directory():
                u.username AS owner_username
         FROM topics t
         JOIN domains d ON t.domain_id = d.id
-        JOIN users u ON d.user_id = u.id
+        JOIN users u ON t.user_id = u.id
         WHERE t.is_public = 1
         ORDER BY t.created_at DESC
     ''').fetchall()
@@ -2908,7 +2911,7 @@ def public_directory():
                u.username AS owner_username
         FROM folders f
         JOIN domains d ON f.domain_id = d.id
-        JOIN users u ON d.user_id = u.id
+        JOIN users u ON f.user_id = u.id
         WHERE f.is_public = 1
         ORDER BY f.name
     ''').fetchall()

@@ -11,7 +11,7 @@ app reads the database from the external compendium-data directory.
 import sys
 import os
 
-USERNAME = '<username>'
+USERNAME = 'compendium'
 PROJECT_DIR = '/home/%s/compendium' % USERNAME
 VENV_ACTIVATE = '/home/%s/compendium-venv/bin/activate_this.py' % USERNAME
 # Force the runtime data directory so the app reads/writes the DB you uploaded,

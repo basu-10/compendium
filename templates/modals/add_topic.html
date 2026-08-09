@@ -12,6 +12,10 @@
         <label for="topic-desc">Description (optional)</label>
         <textarea id="topic-desc" name="description"></textarea>
     </div>
+    <div class="form-group checkbox-group">
+        <input type="checkbox" id="topic-public" name="is_public">
+        <label for="topic-public">Make this topic public</label>
+    </div>
     <div class="form-actions">
         <button type="submit" class="btn-primary">Create Topic</button>
         <button type="button" class="btn-secondary" onclick="closeModal('{{ modal_id }}')">Cancel</button>

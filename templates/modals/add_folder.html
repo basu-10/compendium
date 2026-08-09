@@ -12,6 +12,10 @@
         <label for="folder-desc-{{ modal_id }}">Description (optional)</label>
         <textarea id="folder-desc-{{ modal_id }}" name="description"></textarea>
     </div>
+    <div class="form-group checkbox-group">
+        <input type="checkbox" id="folder-public-{{ modal_id }}" name="is_public">
+        <label for="folder-public-{{ modal_id }}">Make this folder public</label>
+    </div>
     <div class="form-actions">
         <button type="submit" class="btn-primary">Create Folder</button>
         <button type="button" class="btn-secondary" onclick="closeModal('{{ modal_id }}')">Cancel</button>

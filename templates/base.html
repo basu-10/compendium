@@ -63,12 +63,12 @@
                 <a href="{{ url_for('all_domains') }}" class="sidebar-link {% if request.endpoint in ['all_domains', 'domain', 'topic'] %}active{% endif %}">
                     <span class="sidebar-icon">&#9632;</span> All Domains
                 </a>
-                <a href="{{ url_for('public_directory') }}" class="sidebar-link {% if request.endpoint == 'public_directory' %}active{% endif %}">
-                    <span class="sidebar-icon">&#9632;</span> Public
-                </a>
                 {% if logged_in %}
                 <a href="{{ url_for('dashboard') }}" class="sidebar-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
                     <span class="sidebar-icon">&#9632;</span> Dashboard
+                </a>
+                <a href="{{ url_for('user_public', username=current_user.username) }}" class="sidebar-link {% if request.endpoint == 'user_public' %}active{% endif %}">
+                    <span class="sidebar-icon">&#9632;</span> My Public Page
                 </a>
                 {% endif %}
                 <a href="{{ url_for('about') }}" class="sidebar-link">

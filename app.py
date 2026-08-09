@@ -3012,37 +3012,6 @@ def logout():
     return redirect(url_for('index'))
 
 
-# ---------------------------------------------------------------------------
-# Public discovery
-# ---------------------------------------------------------------------------
-
-@app.route('/public')
-def public_directory():
-    """Global directory of every user's public topics and folders."""
-    conn = get_db()
-    # Public topics with their owning domain and owner username.
-    topics = conn.execute('''
-        SELECT t.id, t.name, t.description, d.id AS domain_id, d.name AS domain_name,
-               u.username AS owner_username
-        FROM topics t
-        JOIN domains d ON t.domain_id = d.id
-        JOIN users u ON t.user_id = u.id
-        WHERE t.is_public = 1
-        ORDER BY t.created_at DESC
-    ''').fetchall()
-    # Public folders (containers); their public child topics are shown via /topic.
-    folders = conn.execute('''
-        SELECT f.id, f.name, f.description, d.id AS domain_id, d.name AS domain_name,
-               u.username AS owner_username
-        FROM folders f
-        JOIN domains d ON f.domain_id = d.id
-        JOIN users u ON f.user_id = u.id
-        WHERE f.is_public = 1
-        ORDER BY f.name
-    ''').fetchall()
-    conn.close()
-    return render_template('public.html', topics=topics, folders=folders)
-
 
 
 @app.route('/user/<username>')
@@ -3061,7 +3030,7 @@ def user_public(username):
         JOIN domains d ON t.domain_id = d.id
         WHERE t.user_id = ? AND t.is_public = 1
         ORDER BY t.created_at DESC
-    ''', (user['id'],)).fetchone()
+    ''', (user['id'],)).fetchall()
     conn.close()
     return render_template('user_public.html', user=user, topics=topics)
 

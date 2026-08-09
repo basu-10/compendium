@@ -918,31 +918,63 @@ def domain(domain_id):
     # Domains are shared, always-visible category labels with no owner, so every
     # domain is reachable by everyone (logged in or not). Visibility of the
     # topics/folders inside is decided per row below.
-    uid = g.user['id'] if g.user is not None else None
-    if uid is not None:
-        topic_vis = 'AND (t.user_id = ? OR t.is_public = 1)'
-        topic_params = [uid]
-        folder_vis = 'AND (f.user_id = ? OR f.is_public = 1)'
-        folder_params = [uid]
-    else:
-        topic_vis = 'AND t.is_public = 1'
-        topic_params = []
-        folder_vis = 'AND f.is_public = 1'
-        folder_params = []
-    # Topics with no folder (shouldn't happen post-backfill, but keep the page
-    # honest if a topic exists with folder_id NULL). The viewer sees their own
-    # topics plus any public topic in the domain.
-    loose_topics = conn.execute(f'''
-        SELECT t.*,
-               COUNT(DISTINCT s.id) as statement_count,
-               COUNT(DISTINCT a.id) as attachment_count
-        FROM topics t
-        LEFT JOIN statements s ON t.id = s.topic_id
-        LEFT JOIN attachments a ON s.id = a.statement_id
-        WHERE t.domain_id = ? AND t.folder_id IS NULL {topic_vis}
-        GROUP BY t.id
-        ORDER BY t.created_at DESC
-    ''', (domain_id,) + tuple(topic_params)).fetchall()
+        uid = g.user['id'] if g.user is not None else None
+        if uid is not None:
+            topic_vis = 'AND (t.user_id = ? OR t.is_public = 1)'
+            topic_params = [uid]
+            folder_vis = 'AND (f.user_id = ? OR f.is_public = 1)'
+            folder_params = [uid]
+        else:
+            topic_vis = 'AND t.is_public = 1'
+            topic_params = []
+            folder_vis = 'AND f.is_public = 1'
+            folder_params = []
+        # Loose topics: topics with no folder, plus topics in folders that are not visible to the user
+        # but are either public or owned by the user (for logged in) or public (for logged out).
+        if uid is not None:
+            # Logged in: show loose topics that are either:
+            #   (a) loose and (owned by user or public)
+            #   (b) in a folder that is not visible to the user but the topic is either public or owned by the user
+            loose_topics = conn.execute('''
+                SELECT t.*, 
+                       COUNT(DISTINCT s.id) as statement_count,
+                       COUNT(DISTINCT a.id) as attachment_count
+                FROM topics t
+                LEFT JOIN statements s ON t.id = s.topic_id
+                LEFT JOIN attachments a ON s.id = a.statement_id
+                LEFT JOIN folders f ON t.folder_id = f.id
+                WHERE t.domain_id = ? 
+                  AND ( 
+                        (t.folder_id IS NULL AND (t.user_id = ? OR t.is_public = 1))
+                        OR
+                        (t.folder_id IS NOT NULL AND 
+                             (t.is_public = 1 OR t.user_id = ?) 
+                             AND NOT (f.user_id = ? OR f.is_public = 1))
+                      )
+                GROUP BY t.id
+                ORDER BY t.created_at DESC
+            ''', (domain_id, uid, uid, uid, uid, uid)).fetchall()
+        else:
+            # Logged out: show loose topics that are either:
+            #   (a) loose and public
+            #   (b) in a folder that is not public but the topic is public
+            loose_topics = conn.execute('''
+                SELECT t.*, 
+                       COUNT(DISTINCT s.id) as statement_count,
+                       COUNT(DISTINCT a.id) as attachment_count
+                FROM topics t
+                LEFT JOIN statements s ON t.id = s.topic_id
+                LEFT JOIN attachments a ON s.id = a.statement_id
+                LEFT JOIN folders f ON t.folder_id = f.id
+                WHERE t.domain_id = ? 
+                  AND ( 
+                        (t.folder_id IS NULL AND t.is_public = 1)
+                        OR
+                        (t.folder_id IS NOT NULL AND t.is_public = 1 AND NOT (f.is_public = 1))
+                      )
+                GROUP BY t.id
+                ORDER BY t.created_at DESC
+            ''', (domain_id,)).fetchall()
     # Folders visible to the viewer: their own folders plus any public folder,
     # plus the ancestor chain so a public topic's path renders. Logged-out users
     # only ever see public folders.

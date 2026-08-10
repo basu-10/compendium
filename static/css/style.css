@@ -1492,6 +1492,87 @@ p {
     resize: none;
 }
 
+/* Edit Asset modal: normal mode layout - ensure buttons are visible */
+.modal-overlay .edit-asset-form {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.modal-overlay .edit-asset-form .form-fields {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.modal-overlay .edit-asset-form .form-actions {
+    flex-shrink: 0;
+}
+
+/* Edit Asset modal: fullscreen FAB save button */
+.fab-save {
+    display: none;
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    background-color: var(--accent);
+    color: #ffffff;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 2rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    z-index: 1001;
+    transition: all 0.2s;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.fab-save:hover {
+    background-color: var(--accent-hover);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+}
+
+.modal-overlay.active.fullscreen .edit-asset-form.is-dirty .fab-save {
+    display: inline-flex;
+}
+
+.modal-overlay.active.fullscreen .edit-asset-form .form-actions .btn-primary {
+    display: none;
+}
+
+/* Make CKEditor toolbar sticky in fullscreen edit mode */
+.modal-overlay.active.fullscreen .modal-content .edit-asset-form .content-group-edit {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.modal-overlay.active.fullscreen .modal-content .edit-asset-form .content-group-edit .ck-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    flex-shrink: 0;
+}
+
+.modal-overlay.active.fullscreen .modal-content .edit-asset-form .content-group-edit .richtext-host,
+.modal-overlay.active.fullscreen .modal-content .edit-asset-form .content-group-edit .ck-editor {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.modal-overlay.active.fullscreen .modal-content .edit-asset-form .content-group-edit .ck-editor__editable {
+    flex: 1;
+    min-height: 0;
+}
+
 /* Ensure evidence modal still works */
 #evidence-modal .modal-content {
     max-width: 800px;

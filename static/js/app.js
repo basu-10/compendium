@@ -366,6 +366,13 @@ function editEvidence(attachmentId) {
     clearEditModes(card);
     setEditMode(card, true);
     populateEditForm(attachmentId);
+    initEditAttachmentDirtyTracking(attachmentId);
+    const form = document.getElementById('edit-attachment-form-' + attachmentId);
+    if (form) {
+        form.classList.remove('is-dirty');
+        const fab = document.getElementById('fab-save-' + attachmentId);
+        if (fab) fab.style.display = 'none';
+    }
     openModal('edit-attachment-' + attachmentId);
 }
 
@@ -792,7 +799,11 @@ function populateEditForm(attachmentId) {
                     // CKEditor 5: listen for data changes
                     result.editor.model.document.on('change:data', function () {
                         content.value = result.getData();
+                        form.classList.add('is-dirty');
+                        var fab = document.getElementById('fab-save-' + attachmentId);
+                        if (fab) fab.style.display = '';
                     });
+                    form._ckResult = result;
                     form.addEventListener('submit', function () {
                         content.value = result.getData();
                     });
@@ -800,6 +811,46 @@ function populateEditForm(attachmentId) {
             }
         })
         .catch(function() {});
+}
+
+function initEditAttachmentDirtyTracking(attachmentId) {
+    var form = document.getElementById('edit-attachment-form-' + attachmentId);
+    if (!form || form.dataset.dirtyInitialized === '1') return;
+    form.dataset.dirtyInitialized = '1';
+
+    var fabButton = document.getElementById('fab-save-' + attachmentId);
+    if (!fabButton) return;
+
+    function markDirty() {
+        form.classList.add('is-dirty');
+        fabButton.style.display = '';
+    }
+
+    function markClean() {
+        form.classList.remove('is-dirty');
+        fabButton.style.display = 'none';
+    }
+
+    form.querySelectorAll('input, select, textarea').forEach(function (el) {
+        if (el.type === 'file') {
+            el.addEventListener('change', markDirty);
+        } else if (el.tagName === 'SELECT') {
+            el.addEventListener('change', markDirty);
+        } else {
+            el.addEventListener('input', markDirty);
+        }
+    });
+
+    form.addEventListener('submit', markClean);
+
+    fabButton.addEventListener('click', function () {
+        if (form.classList.contains('is-dirty')) {
+            var submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.click();
+        }
+    });
+
+    markClean();
 }
 
 // The statement whose assets the evidence pane is currently showing. Kept in

@@ -25,7 +25,7 @@
             </nav>
             <div class="public-header-actions">
                 <a href="{{ url_for('dashboard') }}" class="public-link-subtle">Sign in</a>
-                <a href="{{ url_for('all_domains') }}" class="btn-cta">Open the app</a>
+                <a href="{{ url_for('signup') }}" class="btn-cta">Sign up</a>
             </div>
             <input type="checkbox" id="public-menu-toggle" class="public-menu-toggle" aria-hidden="true">
             <label for="public-menu-toggle" class="public-menu-btn" aria-label="Toggle navigation menu">
@@ -38,6 +38,7 @@
                 <a href="{{ url_for('about') }}" class="public-nav-link {% if request.endpoint == 'about' %}active{% endif %}">About</a>
                 <a href="{{ url_for('all_domains') }}" class="public-nav-link {% if request.endpoint in ['all_domains', 'domain', 'topic'] %}active{% endif %}">All Domains</a>
                 <a href="{{ url_for('dashboard') }}" class="public-nav-link">Sign in</a>
+                <a href="{{ url_for('signup') }}" class="public-nav-link">Sign up</a>
             </div>
         </div>
     </header>

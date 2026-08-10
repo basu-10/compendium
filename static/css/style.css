@@ -55,6 +55,7 @@ body {
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
 }
 
 /* Layout */
@@ -3055,12 +3056,17 @@ p {
 
     /* Collapse the inline desktop nav into a hamburger menu */
     .public-nav,
-    .public-link-subtle {
+    .public-link-subtle,
+    .public-header-actions {
         display: none;
     }
 
     .public-menu-btn {
         display: flex;
+    }
+
+    .public-header-inner {
+        gap: 1rem;
     }
 
     /* Checkbox lives inside .public-header-inner; the menu is in the next

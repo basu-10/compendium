@@ -1483,7 +1483,8 @@ def create_attachment():
         if source_name:
             title = os.path.splitext(os.path.basename(source_name))[0] or 'Untitled'
         elif content:
-            title = (content[:60] + '…') if len(content) > 60 else content
+            text = BeautifulSoup(content, 'html.parser').get_text()
+            title = (text[:60] + '…') if len(text) > 60 else text
         else:
             title = 'Untitled'
 

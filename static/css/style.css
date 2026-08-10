@@ -1586,6 +1586,34 @@ p {
     min-height: 0;
 }
 
+.modal-overlay.active.fullscreen {
+    padding: 0;
+}
+
+@media (max-width: 768px) {
+    .modal-overlay.active.fullscreen .modal-content {
+        padding: 1rem;
+    }
+
+    .modal-overlay.active.fullscreen .modal-content .modal-icon-btn {
+        top: 0.75rem;
+        width: 40px;
+        height: 40px;
+    }
+
+    .modal-overlay.active.fullscreen .close-modal {
+        right: 0.75rem;
+    }
+
+    .modal-overlay.active.fullscreen .fullscreen-modal {
+        right: 2.75rem;
+    }
+
+    .modal-overlay.active.fullscreen .fab-save {
+        bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+    }
+}
+
 /* Ensure evidence modal still works */
 #evidence-modal .modal-content {
     max-width: 800px;

@@ -132,21 +132,29 @@
 
         <nav class="mobile-nav" id="mobile-nav" aria-label="Mobile navigation">
             <a href="{{ url_for('all_domains') }}" class="mobile-nav-link {% if request.endpoint in ['all_domains', 'domain', 'topic'] %}active{% endif %}">
-                <span class="mobile-nav-icon">&#9632;</span>
+                <span class="mobile-nav-icon" aria-hidden="true">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                </span>
                 <span class="mobile-nav-label">Domains</span>
             </a>
             {% if logged_in %}
             <a href="{{ url_for('dashboard') }}" class="mobile-nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
-                <span class="mobile-nav-icon">&#9632;</span>
+                <span class="mobile-nav-icon" aria-hidden="true">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                </span>
                 <span class="mobile-nav-label">Dashboard</span>
             </a>
             <a href="{{ url_for('user_public', username=current_user.username) }}" class="mobile-nav-link {% if request.endpoint == 'user_public' %}active{% endif %}">
-                <span class="mobile-nav-icon">&#9632;</span>
+                <span class="mobile-nav-icon" aria-hidden="true">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                </span>
                 <span class="mobile-nav-label">Profile</span>
             </a>
             {% endif %}
             <button type="button" class="mobile-nav-link mobile-nav-more" id="mobile-nav-more" aria-label="More options" aria-expanded="false">
-                <span class="mobile-nav-icon">&#8943;</span>
+                <span class="mobile-nav-icon" aria-hidden="true">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+                </span>
                 <span class="mobile-nav-label">More</span>
             </button>
         </nav>
@@ -154,15 +162,21 @@
         <div class="mobile-nav-flyout" id="mobile-nav-flyout" aria-hidden="true">
             <div class="mobile-nav-flyout-card">
                 <a href="{{ url_for('index') }}" class="mobile-nav-flyout-link">
-                    <span class="mobile-nav-flyout-icon">&#127968;</span>
+                    <span class="mobile-nav-flyout-icon" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                    </span>
                     <span class="mobile-nav-flyout-label">Home</span>
                 </a>
                 <a href="{{ url_for('about') }}" class="mobile-nav-flyout-link">
-                    <span class="mobile-nav-flyout-icon">&#9432;</span>
+                    <span class="mobile-nav-flyout-icon" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    </span>
                     <span class="mobile-nav-flyout-label">About</span>
                 </a>
                 <button type="button" class="mobile-nav-flyout-link" id="flyout-settings-btn">
-                    <span class="mobile-nav-flyout-icon">&#9881;</span>
+                    <span class="mobile-nav-flyout-icon" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    </span>
                     <span class="mobile-nav-flyout-label">Settings</span>
                 </button>
             </div>

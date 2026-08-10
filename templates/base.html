@@ -129,6 +129,27 @@
                 {% block content %}{% endblock %}
             </div>
         </div>
+
+        <nav class="mobile-nav" id="mobile-nav" aria-label="Mobile navigation">
+            <a href="{{ url_for('all_domains') }}" class="mobile-nav-link {% if request.endpoint in ['all_domains', 'domain', 'topic'] %}active{% endif %}">
+                <span class="mobile-nav-icon">&#9632;</span>
+                <span class="mobile-nav-label">Domains</span>
+            </a>
+            {% if logged_in %}
+            <a href="{{ url_for('dashboard') }}" class="mobile-nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
+                <span class="mobile-nav-icon">&#9632;</span>
+                <span class="mobile-nav-label">Dashboard</span>
+            </a>
+            <a href="{{ url_for('user_public', username=current_user.username) }}" class="mobile-nav-link {% if request.endpoint == 'user_public' %}active{% endif %}">
+                <span class="mobile-nav-icon">&#9632;</span>
+                <span class="mobile-nav-label">Profile</span>
+            </a>
+            {% endif %}
+            <a href="{{ url_for('about') }}" class="mobile-nav-link {% if request.endpoint == 'about' %}active{% endif %}">
+                <span class="mobile-nav-icon">&#9632;</span>
+                <span class="mobile-nav-label">About</span>
+            </a>
+        </nav>
     </div>
 
     <script>

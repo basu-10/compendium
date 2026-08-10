@@ -441,6 +441,8 @@ function initMobileAccordion() {
             if (!claimsPane.classList.contains('accordion-pane')) {
                 claimsPane.classList.add('accordion-pane');
                 evidencePane.classList.add('accordion-pane');
+                claimsPane.removeAttribute('style');
+                evidencePane.removeAttribute('style');
                 addAccordionToggles();
             }
         } else {

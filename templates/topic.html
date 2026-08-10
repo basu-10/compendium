@@ -255,20 +255,23 @@ document.addEventListener('DOMContentLoaded', function() {
     const isModern = document.body.classList.contains('theme-modern');
 
     if (!isModern && typeof Split !== 'undefined') {
-        const split = Split(['#claims-pane', '#evidence-pane'], {
-            direction: 'horizontal',
-            sizes: [35, 65],
-            minSize: 200,
-            gutterSize: 8,
-            cursor: 'col-resize',
-            onDrag: function() {
-                localStorage.setItem('splitSizes', JSON.stringify(split.getSizes()));
-            }
-        });
+        const isMobile = window.innerWidth < 768;
+        if (!isMobile) {
+            const split = Split(['#claims-pane', '#evidence-pane'], {
+                direction: 'horizontal',
+                sizes: [35, 65],
+                minSize: 200,
+                gutterSize: 8,
+                cursor: 'col-resize',
+                onDrag: function() {
+                    localStorage.setItem('splitSizes', JSON.stringify(split.getSizes()));
+                }
+            });
 
-        const savedSizes = JSON.parse(localStorage.getItem('splitSizes'));
-        if (savedSizes) {
-            split.setSizes(savedSizes);
+            const savedSizes = JSON.parse(localStorage.getItem('splitSizes'));
+            if (savedSizes) {
+                split.setSizes(savedSizes);
+            }
         }
     }
 

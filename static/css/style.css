@@ -370,6 +370,10 @@ body {
     width: 100%;
 }
 
+.topic .page-content {
+    max-width: none;
+}
+
 /* Typography */
 h1, h2, h3, h4 {
     color: var(--text-primary);

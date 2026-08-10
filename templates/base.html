@@ -145,11 +145,28 @@
                 <span class="mobile-nav-label">Profile</span>
             </a>
             {% endif %}
-            <a href="{{ url_for('about') }}" class="mobile-nav-link {% if request.endpoint == 'about' %}active{% endif %}">
-                <span class="mobile-nav-icon">&#9632;</span>
-                <span class="mobile-nav-label">About</span>
-            </a>
+            <button type="button" class="mobile-nav-link mobile-nav-more" id="mobile-nav-more" aria-label="More options" aria-expanded="false">
+                <span class="mobile-nav-icon">&#8943;</span>
+                <span class="mobile-nav-label">More</span>
+            </button>
         </nav>
+
+        <div class="mobile-nav-flyout" id="mobile-nav-flyout" aria-hidden="true">
+            <div class="mobile-nav-flyout-card">
+                <a href="{{ url_for('index') }}" class="mobile-nav-flyout-link">
+                    <span class="mobile-nav-flyout-icon">&#127968;</span>
+                    <span class="mobile-nav-flyout-label">Home</span>
+                </a>
+                <a href="{{ url_for('about') }}" class="mobile-nav-flyout-link">
+                    <span class="mobile-nav-flyout-icon">&#9432;</span>
+                    <span class="mobile-nav-flyout-label">About</span>
+                </a>
+                <button type="button" class="mobile-nav-flyout-link" id="flyout-settings-btn">
+                    <span class="mobile-nav-flyout-icon">&#9881;</span>
+                    <span class="mobile-nav-flyout-label">Settings</span>
+                </button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -157,6 +174,9 @@
     </script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     <script src="{{ url_for('static', filename='js/editors.js') }}"></script>
+    <script>
+        initMobileFlyout();
+    </script>
     {% block scripts %}{% endblock %}
 
     <!-- Settings: layout/theme selection plus account data export/import.

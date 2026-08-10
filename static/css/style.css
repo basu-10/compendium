@@ -68,6 +68,10 @@ body {
     display: none;
 }
 
+.mobile-nav-flyout {
+    display: none;
+}
+
 .sidebar {
     width: 260px;
     background-color: var(--bg-sidebar);
@@ -2080,6 +2084,88 @@ p {
         overflow: hidden;
         text-overflow: ellipsis;
         max-width: 100%;
+    }
+
+    .mobile-nav-more {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: inherit;
+        font-family: inherit;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .mobile-nav-flyout {
+        display: none;
+        position: fixed;
+        bottom: 60px;
+        left: 0;
+        right: 0;
+        z-index: 40;
+        padding: 0 1rem;
+        padding-bottom: env(safe-area-inset-bottom, 0);
+        pointer-events: none;
+    }
+
+    .mobile-nav-flyout.show {
+        display: block;
+        pointer-events: auto;
+    }
+
+    .mobile-nav-flyout-card {
+        background-color: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: var(--shadow-md);
+        overflow: hidden;
+        transform: translateY(8px);
+        opacity: 0;
+        transition: transform 0.2s ease, opacity 0.2s ease;
+    }
+
+    .mobile-nav-flyout.show .mobile-nav-flyout-card {
+        transform: translateY(0);
+        opacity: 1;
+    }
+
+    .mobile-nav-flyout-link {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        width: 100%;
+        padding: 0.9rem 1rem;
+        color: var(--text-primary);
+        text-decoration: none;
+        font-size: 0.95rem;
+        font-weight: 500;
+        background: none;
+        border: none;
+        border-bottom: 1px solid var(--border-light);
+        cursor: pointer;
+        font-family: inherit;
+        text-align: left;
+        -webkit-tap-highlight-color: transparent;
+        transition: background-color 0.15s;
+    }
+
+    .mobile-nav-flyout-link:last-child {
+        border-bottom: none;
+    }
+
+    .mobile-nav-flyout-link:active {
+        background-color: var(--bg-muted);
+    }
+
+    .mobile-nav-flyout-icon {
+        font-size: 1.1rem;
+        line-height: 1;
+        width: 1.5rem;
+        text-align: center;
+        opacity: 0.8;
+    }
+
+    .mobile-nav-flyout-label {
+        line-height: 1.2;
     }
 }
 

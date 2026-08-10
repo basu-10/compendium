@@ -381,6 +381,56 @@ function openAttachModal(statementId) {
     if (statementId) openModal('attach-' + statementId);
 }
 
+// --- Mobile "More" flyout ---
+function initMobileFlyout() {
+    const moreBtn = document.getElementById('mobile-nav-more');
+    const flyout = document.getElementById('mobile-nav-flyout');
+    const flyoutSettingsBtn = document.getElementById('flyout-settings-btn');
+    if (!moreBtn || !flyout) return;
+
+    function openFlyout() {
+        flyout.classList.add('show');
+        flyout.setAttribute('aria-hidden', 'false');
+        moreBtn.setAttribute('aria-expanded', 'true');
+        moreBtn.classList.add('active');
+    }
+
+    function closeFlyout() {
+        flyout.classList.remove('show');
+        flyout.setAttribute('aria-hidden', 'true');
+        moreBtn.setAttribute('aria-expanded', 'false');
+        moreBtn.classList.remove('active');
+    }
+
+    moreBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (flyout.classList.contains('show')) {
+            closeFlyout();
+        } else {
+            openFlyout();
+        }
+    });
+
+    document.addEventListener('click', function(e) {
+        if (flyout.classList.contains('show') && !flyout.contains(e.target) && e.target !== moreBtn) {
+            closeFlyout();
+        }
+    });
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && flyout.classList.contains('show')) {
+            closeFlyout();
+        }
+    });
+
+    if (flyoutSettingsBtn) {
+        flyoutSettingsBtn.addEventListener('click', function() {
+            closeFlyout();
+            openModal('settings-modal');
+        });
+    }
+}
+
 // --- Mobile Accordion ---
 function initMobileAccordion() {
     const claimsPane = document.getElementById('claims-pane');

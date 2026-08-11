@@ -71,6 +71,12 @@ function toggleOrSaveFullscreen(modalId, attachmentId) {
     if (modal.classList.contains('fullscreen')) {
         const form = document.getElementById('edit-attachment-form-' + attachmentId);
         if (form) {
+            // Manually sync CKEditor data to hidden textarea before submit,
+            // in case the populateEditForm submit listener hasn't been added yet.
+            if (form._ckResult && form._ckResult.getData) {
+                const content = form.querySelector('textarea[name="content"]');
+                if (content) content.value = form._ckResult.getData();
+            }
             form.classList.remove('is-dirty');
             const fab = document.getElementById('fab-save-' + attachmentId);
             if (fab) fab.style.display = 'none';
@@ -853,8 +859,10 @@ function populateEditForm(attachmentId) {
 
             // For rich text, swap the plain textarea for a CKEditor 5 editor and keep
             // the underlying textarea as the field the form submits, syncing on
-            // every change and on submit.
-            if (full.type === 'richtext' && window.COMPENDIUM_EDITORS && content && content.tagName === 'TEXTAREA') {
+            // every change and on submit. Accept both 'richtext' and 'text' types
+            // since the server may store either for rich-text content.
+            const isRichTextType = full.type === 'richtext' || full.type === 'text';
+            if (isRichTextType && window.COMPENDIUM_EDITORS && content && content.tagName === 'TEXTAREA') {
                 content.dataset.ckeditorReady = '1';
 
                 // Tear down any previous CKEditor instance for this form so

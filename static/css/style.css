@@ -948,7 +948,7 @@ p {
 }
 
 .evidence-card.expanded .hover-actions .icon-btn.collapse-btn,
-.evidence-card-header:hover .icon-btn.collapse-btn,
+.evidence-card.expanded .evidence-card-header:hover .icon-btn.collapse-btn,
 .icon-btn.collapse-btn:focus-within {
     display: flex;
 }
@@ -1489,6 +1489,11 @@ p {
 /* Hide non-editor form fields in fullscreen editor mode */
 .modal-overlay.active.fullscreen .modal-content > h3,
 .modal-overlay.active.fullscreen .modal-content .form-group:not(.content-group-edit):not(.form-actions) {
+    display: none;
+}
+
+.modal-overlay.active.fullscreen .close-modal,
+.modal-overlay.active.fullscreen .form-actions .btn-secondary {
     display: none;
 }
 

@@ -65,6 +65,23 @@ function toggleModalFullscreen(modalId) {
     if (modal) modal.classList.toggle('fullscreen');
 }
 
+function toggleOrSaveFullscreen(modalId, attachmentId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+    if (modal.classList.contains('fullscreen')) {
+        const form = document.getElementById('edit-attachment-form-' + attachmentId);
+        if (form) {
+            form.classList.remove('is-dirty');
+            const fab = document.getElementById('fab-save-' + attachmentId);
+            if (fab) fab.style.display = 'none';
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.click();
+        }
+    } else {
+        modal.classList.toggle('fullscreen');
+    }
+}
+
 // Close modal on outside click
 document.addEventListener('click', function(event) {
     document.querySelectorAll('.modal-overlay.active').forEach(modal => {
@@ -838,10 +855,22 @@ function populateEditForm(attachmentId) {
             // the underlying textarea as the field the form submits, syncing on
             // every change and on submit.
             if (full.type === 'richtext' && window.COMPENDIUM_EDITORS && content && content.tagName === 'TEXTAREA') {
-                // Guard: only build a CKEditor editor once per form load so
-                // re-opening the same modal does not stack duplicate editors.
-                if (content.dataset.ckeditorReady === '1') return;
                 content.dataset.ckeditorReady = '1';
+
+                // Tear down any previous CKEditor instance for this form so
+                // re-opening the modal always shows the current server content.
+                if (form._ckResult && form._ckResult.editor) {
+                    try { form._ckResult.editor.destroy(); } catch (e) {}
+                }
+                form._ckResult = null;
+
+                const existingWrapper = content.parentElement;
+                if (existingWrapper && existingWrapper.classList.contains('richtext-host')) {
+                    existingWrapper.parentNode.insertBefore(content, existingWrapper);
+                    existingWrapper.remove();
+                }
+                content.style.display = '';
+
                 const wrapper = document.createElement('div');
                 content.parentNode.insertBefore(wrapper, content);
                 wrapper.appendChild(content);

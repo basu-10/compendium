@@ -103,7 +103,7 @@
             t.setAttribute('aria-selected', active ? 'true' : 'false');
         });
         root.querySelectorAll('.attach-tab-panel').forEach(function (p) {
-            var active = p.id === 'panel-' + name + '{{ statement_id }}';
+            var active = p.id === 'panel-' + name + '-{{ statement_id }}';
             p.classList.toggle('active', active);
             if (active) { p.removeAttribute('hidden'); } else { p.setAttribute('hidden', ''); }
         });

@@ -209,6 +209,10 @@ def preview_text(text, limit=PREVIEW_LENGTH):
     never changes its text when it is re-rendered client-side.
     """
     value = (text or '').strip()
+    if not value:
+        return ''
+    soup = BeautifulSoup(value, 'html.parser')
+    value = soup.get_text(separator=' ', strip=True)
     if len(value) <= limit:
         return value
     return value[:limit].rstrip() + '...'

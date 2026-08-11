@@ -6,7 +6,7 @@
     <h3 id="{{ modal_id }}-title">Edit Asset</h3>
     <button type="button" class="modal-icon-btn fullscreen-modal" title="Toggle fullscreen"
             aria-label="Toggle fullscreen"
-            onclick="toggleModalFullscreen('{{ modal_id }}')">&#9974;</button>
+            onclick="toggleOrSaveFullscreen('{{ modal_id }}', {{ attachment.id }})">&#9974;</button>
 
     <div class="form-fields">
         <div class="form-group">
@@ -64,8 +64,8 @@
 
     <div class="form-actions">
         <button type="submit" class="btn-primary">Save Changes</button>
-        <button type="button" class="btn-secondary" onclick="closeModal('{{ modal_id }}')">Cancel</button>
+        <button type="button" class="btn-secondary cancel-modal" onclick="closeModal('{{ modal_id }}')">Cancel</button>
     </div>
+    <button type="button" class="fab-save" id="fab-save-{{ attachment.id }}" title="Save" aria-label="Save">Save</button>
 </form>
-<button type="button" class="fab-save" id="fab-save-{{ attachment.id }}" title="Save" aria-label="Save">Save</button>
 {% endblock %}

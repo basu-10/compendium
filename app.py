@@ -802,6 +802,11 @@ def index():
     return render_template('landing.html', stats=stats, featured=featured)
 
 
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204
+
+
 @app.route('/about')
 def about():
     return render_template('about.html')

@@ -91,101 +91,12 @@
     </div>
 </form>
 
-<script>
-(function () {
-    var root = document.getElementById('{{ modal_id }}');
-    if (!root) return;
-    var tabs = root.querySelectorAll('.attach-tab');
-    function selectTab(name) {
-        tabs.forEach(function (t) {
-            var active = t.dataset.tab === name;
-            t.classList.toggle('active', active);
-            t.setAttribute('aria-selected', active ? 'true' : 'false');
-        });
-        root.querySelectorAll('.attach-tab-panel').forEach(function (p) {
-            var active = p.id === 'panel-' + name + '-{{ statement_id }}';
-            p.classList.toggle('active', active);
-            if (active) { p.removeAttribute('hidden'); } else { p.setAttribute('hidden', ''); }
-        });
-        if (name === 'paste') {
-            var ckHost = root.querySelector('.rich-editor-host');
-            if (ckHost && typeof getCkeditorForHost === 'function') {
-                var editor = getCkeditorForHost(ckHost);
-                if (editor && editor.editing && editor.editing.view && editor.editing.view.focus) {
-                    editor.editing.view.focus();
-                }
-            }
-        } else if (name === 'upload') {
-            var f = root.querySelector('#att-file-{{ statement_id }}');
-            if (f) f.focus();
-        } else if (name === 'scrape') {
-            var u = root.querySelector('#att-scrape-url-{{ statement_id }}');
-            if (u) u.focus();
-        }
-    }
-    tabs.forEach(function (t) {
-        t.addEventListener('click', function () { selectTab(t.dataset.tab); });
-    });
-    var fileEl = root.querySelector('#att-file-{{ statement_id }}');
-    var scrapeUrlEl = root.querySelector('#att-scrape-url-{{ statement_id }}');
-    var hiddenTextarea = root.querySelector('#att-content-hidden-{{ statement_id }}');
-    var urlInput = root.querySelector('#att-content-url-{{ statement_id }}');
-    function clearOthers(except) {
-        if (except !== 'content') {
-            if (hiddenTextarea) hiddenTextarea.value = '';
-            if (urlInput) urlInput.value = '';
-        }
-        if (except !== 'file' && fileEl) fileEl.value = '';
-        if (except !== 'scrape' && scrapeUrlEl) scrapeUrlEl.value = '';
-    }
-    if (urlInput) {
-        urlInput.addEventListener('input', function () {
-            if (urlInput.value.trim()) clearOthers('content');
-        });
-    }
+<script type="module">
+import { initAttachModal } from '/static/js/modals/attach-modal.js';
 
-    if (typeof initAttachModalPaste === 'function') {
-        initAttachModalPaste(root, '{{ statement_id }}', function () { clearOthers('content'); });
-    } else {
-        window.addEventListener('load', function () {
-            if (typeof initAttachModalPaste === 'function') {
-                initAttachModalPaste(root, '{{ statement_id }}', function () { clearOthers('content'); });
-            }
-        });
-    }
-
-    // Scrape tab: fetch the URL, run the capture pipeline, populate Title + Content.
-    var scrapeBtn = root.querySelector('#scrape-btn-{{ statement_id }}');
-    var scrapeStatus = root.querySelector('#scrape-status-{{ statement_id }}');
-    var titleEl = root.querySelector('#att-title-{{ statement_id }}');
-    if (scrapeBtn) scrapeBtn.addEventListener('click', function () {
-        var url = scrapeUrlEl.value.trim();
-        if (!url) { scrapeStatus.textContent = 'Enter a URL first.'; return; }
-        scrapeBtn.disabled = true;
-        scrapeBtn.textContent = 'Fetching…';
-        scrapeStatus.textContent = '';
-        fetch('/api/scrape_preview', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: url })
-        }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-          .then(function (res) {
-            if (!res.ok || !res.j.ok) {
-                throw new Error((res.j && res.j.error) || 'Scrape failed');
-            }
-            if (titleEl && !titleEl.value.trim()) titleEl.value = res.j.title || '';
-            if (hiddenTextarea) hiddenTextarea.value = res.j.content || '';
-            selectTab('paste');
-            scrapeStatus.textContent = 'Content loaded — review and click Add Asset.';
-          })
-          .catch(function (err) {
-            scrapeStatus.textContent = err.message || 'Scrape failed';
-          })
-          .finally(function () {
-            scrapeBtn.disabled = false;
-            scrapeBtn.textContent = 'Get Content';
-          });
-    });
-})();
+const root = document.getElementById('{{ modal_id }}');
+if (root) {
+    initAttachModal(root, '{{ statement_id }}');
+}
 </script>
 {% endblock %}

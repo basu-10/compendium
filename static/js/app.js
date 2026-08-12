@@ -844,62 +844,64 @@ function subText(text) {
 // Fill an edit form's title/content from the server on demand, so the initial
 // page payload never ships full richtext bodies twice (once in evidence_data,
 // once in the textarea).
-function populateEditForm(attachmentId) {
+async function populateEditForm(attachmentId) {
     const form = document.getElementById('edit-attachment-form-' + attachmentId);
     if (!form) return;
-    fetch('/attachment/' + attachmentId)
-        .then(function(r) { return r.json(); })
-        .then(function(full) {
-            const title = form.querySelector('input[name="title"]');
-            const content = form.querySelector('textarea[name="content"], input[name="content"]');
-            const tags = form.querySelector('input[name="tags"]');
-            if (title && full.title != null) title.value = full.title;
-            if (content && full.content != null) content.value = full.content;
-            if (tags && full.tags != null) tags.value = full.tags;
+    try {
+        const r = await fetch('/attachment/' + attachmentId);
+        const full = await r.json();
 
-            // For rich text, swap the plain textarea for a CKEditor 5 editor and keep
-            // the underlying textarea as the field the form submits, syncing on
-            // every change and on submit. Accept both 'richtext' and 'text' types
-            // since the server may store either for rich-text content.
-            const isRichTextType = full.type === 'richtext' || full.type === 'text';
-            if (isRichTextType && window.COMPENDIUM_EDITORS && content && content.tagName === 'TEXTAREA') {
-                content.dataset.ckeditorReady = '1';
+        const title = form.querySelector('input[name="title"]');
+        const content = form.querySelector('textarea[name="content"], input[name="content"]');
+        const tags = form.querySelector('input[name="tags"]');
+        if (title && full.title != null) title.value = full.title;
+        if (content && full.content != null) content.value = full.content;
+        if (tags && full.tags != null) tags.value = full.tags;
 
-                // Tear down any previous CKEditor instance for this form so
-                // re-opening the modal always shows the current server content.
-                if (form._ckResult && form._ckResult.editor) {
-                    try { form._ckResult.editor.destroy(); } catch (e) {}
-                }
-                form._ckResult = null;
+        // For rich text, swap the plain textarea for a CKEditor 5 editor and keep
+        // the underlying textarea as the field the form submits, syncing on
+        // every change and on submit. Accept both 'richtext' and 'text' types
+        // since the server may store either for rich-text content.
+        const isRichTextType = full.type === 'richtext' || full.type === 'text';
+        if (isRichTextType && window.COMPENDIUM_EDITORS && content && content.tagName === 'TEXTAREA') {
+            content.dataset.ckeditorReady = '1';
 
-                const existingWrapper = content.parentElement;
-                if (existingWrapper && existingWrapper.classList.contains('richtext-host')) {
-                    existingWrapper.parentNode.insertBefore(content, existingWrapper);
-                    existingWrapper.remove();
-                }
-                content.style.display = '';
-
-                const wrapper = document.createElement('div');
-                content.parentNode.insertBefore(wrapper, content);
-                wrapper.appendChild(content);
-                content.style.display = 'none';
-                const result = COMPENDIUM_EDITORS.renderRichText(wrapper, full.content || '', false);
-                if (result && result.getData) {
-                    // CKEditor 5: listen for data changes
-                    result.editor.model.document.on('change:data', function () {
-                        content.value = result.getData();
-                        form.classList.add('is-dirty');
-                        var fab = document.getElementById('fab-save-' + attachmentId);
-                        if (fab) fab.style.display = '';
-                    });
-                    form._ckResult = result;
-                    form.addEventListener('submit', function () {
-                        content.value = result.getData();
-                    });
-                }
+            // Tear down any previous CKEditor instance for this form so
+            // re-opening the modal always shows the current server content.
+            if (form._ckResult && form._ckResult.editor) {
+                try { form._ckResult.editor.destroy(); } catch (e) {}
             }
-        })
-        .catch(function() {});
+            form._ckResult = null;
+
+            const existingWrapper = content.parentElement;
+            if (existingWrapper && existingWrapper.classList.contains('richtext-host')) {
+                existingWrapper.parentNode.insertBefore(content, existingWrapper);
+                existingWrapper.remove();
+            }
+            content.style.display = '';
+
+            const wrapper = document.createElement('div');
+            content.parentNode.insertBefore(wrapper, content);
+            wrapper.appendChild(content);
+            content.style.display = 'none';
+            const result = await COMPENDIUM_EDITORS.renderRichText(wrapper, full.content || '', false);
+            if (result && result.getData) {
+                // CKEditor 5: listen for data changes
+                result.editor.model.document.on('change:data', function () {
+                    content.value = result.getData();
+                    form.classList.add('is-dirty');
+                    var fab = document.getElementById('fab-save-' + attachmentId);
+                    if (fab) fab.style.display = '';
+                });
+                form._ckResult = result;
+                form.addEventListener('submit', function () {
+                    content.value = result.getData();
+                });
+            }
+        }
+    } catch (e) {
+        // Silently fail; form will submit with whatever values are present
+    }
 }
 
 function initEditAttachmentDirtyTracking(attachmentId) {

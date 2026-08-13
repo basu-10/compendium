@@ -53,7 +53,9 @@
     --fs-caption: 0.78rem;
     --fs-label: 0.82rem;
     --fs-title: 0.95rem;
-    --fs-section: 1.05rem;
+        --fs-section: 1.05rem;
+        --fs-modal-title: 1.1rem;
+    --fs-modal-title: 1.1rem;
 
     --radius-sm: 6px;
     --radius: 10px;
@@ -77,6 +79,224 @@
     --ck-color-table-selected-background: color-mix(in srgb, var(--accent-teal) 15%, transparent);
 }
 
+/* ============================================================================
+   Dark mode — single-source token remap. Every component references these
+   tokens, so a dark palette lights up with near-zero component changes.
+   Triggered automatically via prefers-color-scheme, or explicitly with
+   [data-theme="dark"] on <html> (JS-set toggle wins over the media query).
+   ========================================================================== */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --bg-body: #0e141c;
+        --bg-app: #111a24;
+        --bg-sidebar: rgba(20, 28, 38, 0.72);
+        --bg-surface: #16202c;
+        --bg-muted: #1d2937;
+        --bg-rail: #131c26;
+
+        --border: #2a3947;
+        --border-light: #223040;
+        --border-strong: #3a4d5e;
+
+        --text-primary: #e7edf3;
+        --text-secondary: #a9b6c6;
+        --text-muted: #76879a;
+
+        --accent: #5b8def;
+        --accent-hover: #6f9bf2;
+        --accent-active: #4a7ad8;
+        --signal: #5b8def;
+        --signal-soft: rgba(91, 141, 239, 0.16);
+
+        --accent-teal: #5b8def;
+        --accent-teal-hover: #6f9bf2;
+        --accent-teal-active: #4a7ad8;
+
+        --tag-bg: #1d2937;
+        --tag-text: #b6c4d6;
+        --danger: #f0788c;
+        --danger-soft: rgba(240, 120, 140, 0.14);
+
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30), 0 1px 1px rgba(0, 0, 0, 0.22);
+        --shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.36), 0 1px 2px -1px rgba(0, 0, 0, 0.28);
+        --shadow-md: 0 10px 24px -8px rgba(0, 0, 0, 0.50), 0 4px 10px -6px rgba(0, 0, 0, 0.40);
+
+        /* Soften the global shadows used inside light-theme box-shadows. */
+        --sidebar-glass-edge: rgba(255, 255, 255, 0.05);
+    }
+}
+
+[data-theme="dark"] {
+    --bg-body: #0e141c;
+    --bg-app: #111a24;
+    --bg-sidebar: rgba(20, 28, 38, 0.72);
+    --bg-surface: #16202c;
+    --bg-muted: #1d2937;
+    --bg-rail: #131c26;
+
+    --fs-modal-title: 1.1rem;
+
+    --border: #2a3947;
+    --border-light: #223040;
+    --border-strong: #3a4d5e;
+
+    --text-primary: #e7edf3;
+    --text-secondary: #a9b6c6;
+    --text-muted: #76879a;
+
+    --accent: #5b8def;
+    --accent-hover: #6f9bf2;
+    --accent-active: #4a7ad8;
+    --signal: #5b8def;
+    --signal-soft: rgba(91, 141, 239, 0.16);
+
+    --accent-teal: #5b8def;
+    --accent-teal-hover: #6f9bf2;
+    --accent-teal-active: #4a7ad8;
+
+    --tag-bg: #1d2937;
+    --tag-text: #b6c4d6;
+    --danger: #f0788c;
+    --danger-soft: rgba(240, 120, 140, 0.14);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30), 0 1px 1px rgba(0, 0, 0, 0.22);
+    --shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.36), 0 1px 2px -1px rgba(0, 0, 0, 0.28);
+    --shadow-md: 0 10px 24px -8px rgba(0, 0, 0, 0.50), 0 4px 10px -6px rgba(0, 0, 0, 0.40);
+}
+
+/* --- Dark-mode-specific treatments that tokens alone can't express --- */
+
+/* Add-asset context menu + drop flash use fixed dark chrome; remap to the
+   dark surface so they don't stay dark-on-dark-invisible or light-on-dark. */
+[data-theme="dark"] .drop-flash,
+[data-theme="dark"] .add-asset-menu {
+    --bg-elevated: #1b2632;
+    --text: #e7edf3;
+    --border: #2a3947;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .drop-flash,
+    :root:not([data-theme="light"]) .add-asset-menu {
+        --bg-elevated: #1b2632;
+        --text: #e7edf3;
+        --border: #2a3947;
+    }
+}
+
+/* Univer (spreadsheet) + Plyr defaults assume a light chrome; remap for dark. */
+[data-theme="dark"] body.theme-legacy {
+    --univer-bg: #16202c;
+    --univer-surface: #1d2937;
+    --univer-border: #2a3947;
+    --univer-text: #e7edf3;
+    --univer-text-secondary: #a9b6c6;
+    --univer-accent: #5b8def;
+    --univer-grid: #2a3947;
+    --univer-header-bg: #1d2937;
+}
+
+[data-theme="dark"] body.theme-modern {
+    --univer-bg: #16202c;
+    --univer-surface: #1d2937;
+    --univer-border: #2a3947;
+    --univer-text: #e7edf3;
+    --univer-text-secondary: #a9b6c6;
+    --univer-accent: #5b8def;
+    --univer-grid: #2a3947;
+    --univer-header-bg: #1d2937;
+}
+
+[data-theme="dark"] body.theme-legacy { --plyr-color-main: #5b8def; }
+[data-theme="dark"] body.theme-modern { --plyr-color-main: #5b8def; }
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) body.theme-legacy {
+        --univer-bg: #16202c;
+        --univer-surface: #1d2937;
+        --univer-border: #2a3947;
+        --univer-text: #e7edf3;
+        --univer-text-secondary: #a9b6c6;
+        --univer-accent: #5b8def;
+        --univer-grid: #2a3947;
+        --univer-header-bg: #1d2937;
+        --plyr-color-main: #5b8def;
+    }
+    :root:not([data-theme="light"]) body.theme-modern {
+        --univer-bg: #16202c;
+        --univer-surface: #1d2937;
+        --univer-border: #2a3947;
+        --univer-text: #e7edf3;
+        --univer-text-secondary: #a9b6c6;
+        --univer-accent: #5b8def;
+        --univer-grid: #2a3947;
+        --univer-header-bg: #1d2937;
+        --plyr-color-main: #5b8def;
+    }
+}
+
+/* Body canvas in dark mode: deep slate with a cooler, subtler mesh. */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) body {
+        background-image:
+            radial-gradient(1200px 600px at 12% -8%, rgba(91, 141, 239, 0.10), transparent 60%),
+            radial-gradient(900px 500px at 100% 0%, rgba(91, 141, 239, 0.06), transparent 55%),
+            linear-gradient(180deg, #131c28 0%, #0e141c 100%);
+    }
+    :root:not([data-theme="light"]) body::before {
+        background-image:
+            linear-gradient(to right, rgba(231, 237, 243, 0.035) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(231, 237, 243, 0.035) 1px, transparent 1px);
+    }
+}
+
+[data-theme="dark"] body {
+    background-image:
+        radial-gradient(1200px 600px at 12% -8%, rgba(91, 141, 239, 0.10), transparent 60%),
+        radial-gradient(900px 500px at 100% 0%, rgba(91, 141, 239, 0.06), transparent 55%),
+        linear-gradient(180deg, #131c28 0%, #0e141c 100%);
+}
+
+[data-theme="dark"] body::before {
+    background-image:
+        linear-gradient(to right, rgba(231, 237, 243, 0.035) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(231, 237, 243, 0.035) 1px, transparent 1px);
+}
+
+/* Several components hardcode near-white/near-grey fills for hover/open states;
+   remap those to the dark palette so they don't flash light in dark mode. */
+[data-theme="dark"] .statement:hover,
+[data-theme="dark"] .active-statement,
+[data-theme="dark"] .sidebar-user:hover,
+[data-theme="dark"] .public-header,
+[data-theme="dark"] .auth-card,
+[data-theme="dark"] .sidebar-avatar,
+[data-theme="dark"] .icon-btn.delete-btn:hover {
+    background-color: var(--bg-muted);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .statement:hover,
+    :root:not([data-theme="light"]) .active-statement,
+    :root:not([data-theme="light"]) .sidebar-user:hover,
+    :root:not([data-theme="light"]) .public-header,
+    :root:not([data-theme="light"]) .auth-card,
+    :root:not([data-theme="light"]) .sidebar-avatar,
+    :root:not([data-theme="light"]) .icon-btn.delete-btn:hover {
+        background-color: var(--bg-muted);
+    }
+}
+
+[data-theme="dark"] .public-header {
+    background-color: rgba(22, 32, 44, 0.85);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .public-header {
+        background-color: rgba(22, 32, 44, 0.85);
+    }
+}
+
 * {
     box-sizing: border-box;
     margin: 0;
@@ -92,12 +312,39 @@ body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
-    /* Precision slate field: a faint cool mesh that reads as "engineered". */
+    position: relative;
+    /* Precision slate field: a faint cool mesh plus a 1px engineering grid that
+       reads as "engineered". The grid also gives the frosted sidebar something
+       to refract, so the glass reads deliberately rather than blurring a flat
+       colour. */
     background-image:
         radial-gradient(1200px 600px at 12% -8%, rgba(37, 99, 235, 0.06), transparent 60%),
         radial-gradient(900px 500px at 100% 0%, rgba(30, 58, 95, 0.05), transparent 55%),
         linear-gradient(180deg, #eef2f7 0%, #e7ecf2 100%);
     background-attachment: fixed;
+}
+
+/* Faint precision grid layered over the canvas. Sits behind every surface and
+   scrolls with content so the sidebar glass has live texture to blur. */
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+        linear-gradient(to right, rgba(15, 27, 45, 0.028) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(15, 27, 45, 0.028) 1px, transparent 1px);
+    background-size: 32px 32px;
+    background-position: center;
+    /* Vignette so the grid fades at the edges instead of hard-clipping. */
+    -webkit-mask-image: radial-gradient(140% 120% at 50% 30%, #000 55%, transparent 100%);
+    mask-image: radial-gradient(140% 120% at 50% 30%, #000 55%, transparent 100%);
+}
+
+.app-layout {
+    position: relative;
+    z-index: 1;
 }
 
 /* Layout */
@@ -117,7 +364,11 @@ body {
 
 .sidebar {
     width: 260px;
+    /* Frosted glass: a translucent surface over the precision grid so the
+       backdrop-filter has live texture to refract. A faint inner gradient
+       gives the glass depth even where it blurs a near-flat colour. */
     background-color: var(--bg-sidebar);
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 22%, rgba(30, 58, 95, 0.04) 100%);
     -webkit-backdrop-filter: blur(18px) saturate(140%);
     backdrop-filter: blur(18px) saturate(140%);
     border-right: 1px solid var(--border);
@@ -502,6 +753,11 @@ p {
     transform: translateY(-1px);
 }
 
+.card:focus-visible {
+    outline: 2px solid var(--signal);
+    outline-offset: 2px;
+}
+
 /* "New Topic" card.
    Shares the card footprint so it sits in the grid flow, but is deliberately
    styled as an affordance rather than content: dashed outline, no filled
@@ -722,7 +978,7 @@ p {
 
 .pane-header h3 {
     margin-bottom: 0;
-    font-size: 0.95rem;
+    font-size: var(--fs-title);
     color: var(--text-secondary);
     font-weight: 600;
     text-transform: uppercase;
@@ -872,7 +1128,7 @@ p {
 }
 
 .statement:focus-visible {
-    outline: 2px solid var(--text-primary);
+    outline: 2px solid var(--signal);
     outline-offset: 2px;
 }
 
@@ -991,7 +1247,7 @@ p {
 }
 
 .add-row:focus-visible {
-    outline: 2px solid var(--text-primary);
+    outline: 2px solid var(--signal);
     outline-offset: 2px;
 }
 
@@ -1105,7 +1361,7 @@ p {
 }
 
 .add-card:focus-visible {
-    outline: 2px solid var(--text-primary);
+    outline: 2px solid var(--signal);
     outline-offset: 2px;
 }
 
@@ -1501,7 +1757,7 @@ p {
 
 .modal-header h3 {
     margin: 0;
-    font-size: 1.1rem;
+    font-size: var(--fs-modal-title);
     font-weight: 600;
     color: var(--text-primary);
 }
@@ -1524,7 +1780,7 @@ p {
 .modal-content > h3 {
     padding: 1.25rem 1.5rem 0;
     margin: 0;
-    font-size: 1.1rem;
+    font-size: var(--fs-modal-title);
     font-weight: 600;
     color: var(--text-primary);
 }
@@ -1555,8 +1811,8 @@ p {
     background-color: var(--bg-muted);
 }
 
-.modal-icon-btn:focus {
-    outline: 2px solid var(--text-primary);
+.modal-icon-btn:focus-visible {
+    outline: 2px solid var(--signal);
     outline-offset: 2px;
 }
 
@@ -1574,6 +1830,10 @@ p {
     max-height: 100vh;
     height: 100%;
     border-radius: 0;
+    /* Fullscreen editor gets its own keyline: the signal blue (not the
+       standard slate) marks it as a live, focused editing context rather than
+       reusing the modal-chrome accent. */
+    border-top: 3px solid var(--signal);
     padding: 2.5rem;
     display: flex;
     flex-direction: column;
@@ -1939,7 +2199,7 @@ p {
 
 .add-form h3 {
     margin-bottom: 1.25rem;
-    font-size: 1.1rem;
+    font-size: var(--fs-modal-title);
 }
 
 /* Empty State */
@@ -2094,6 +2354,9 @@ p {
     opacity: 0;
     transform: translateY(-2px);
     transition: opacity 0.18s ease, transform 0.18s ease;
+    /* Sit above the card title/badge so the toolbar never collides with them,
+       even on narrow widths where the pill wraps. */
+    z-index: 5;
 }
 
 .statement:hover .hover-actions,
@@ -2151,8 +2414,8 @@ p {
     background-color: #fef2f2;
 }
 
-.icon-btn:focus {
-    outline: 2px solid var(--text-primary);
+.icon-btn:focus-visible {
+    outline: 2px solid var(--signal);
     outline-offset: 2px;
 }
 
@@ -2413,6 +2676,22 @@ p {
     .btn-export {
         padding: 0.4rem 0.75rem;
         font-size: 0.8rem;
+    }
+
+    /* Leave clearance for the absolute hover-actions pill so it never overlaps
+       the card/statement title on narrow widths. */
+    .card .hover-actions,
+    .card-in-folder .hover-actions,
+    .statement .hover-actions {
+        max-width: 52%;
+    }
+
+    .card h3,
+    .card h4,
+    .card-in-folder h3,
+    .card-in-folder h4,
+    .statement .statement-text {
+        padding-right: 2.75rem;
     }
 }
 
@@ -2733,7 +3012,7 @@ p {
 }
 
 .feature-card h3 {
-    font-size: 1.05rem;
+    font-size: var(--fs-section);
     margin-bottom: 0.5rem;
 }
 
@@ -2772,7 +3051,7 @@ p {
 
 .step-body h4 {
     margin-bottom: 0.3rem;
-    font-size: 0.98rem;
+    font-size: var(--fs-title);
 }
 
 .step-body p {
@@ -2805,7 +3084,7 @@ p {
 }
 
 .featured-card h3 {
-    font-size: 1.05rem;
+    font-size: var(--fs-section);
     margin-bottom: 0.5rem;
 }
 
@@ -3136,7 +3415,7 @@ p {
 
 .panel-header h3 {
     margin-bottom: 0;
-    font-size: 0.85rem;
+    font-size: var(--fs-label);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-secondary);
@@ -3668,7 +3947,7 @@ body.theme-modern2 .topic .accordion-statement.expanded .chevron {
 body.theme-modern2 .topic .accordion-statement-text {
     flex: 1 1 auto;
     font-weight: 500;
-    font-size: 0.98rem;
+    font-size: var(--fs-title);
     line-height: 1.4;
     letter-spacing: -0.01em;
     color: var(--text-primary);
@@ -3694,12 +3973,22 @@ body.theme-modern2 .topic .accordion-statement-header .hover-actions {
 }
 
 body.theme-modern2 .topic .accordion-statement-body {
-    display: none;
-    padding: 0 1.25rem 1.25rem;
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    padding: 0 1.25rem;
+    transition: grid-template-rows 0.28s ease, opacity 0.24s ease, padding 0.28s ease;
+}
+
+body.theme-modern2 .topic .accordion-statement-body > * {
+    min-height: 0;
+    overflow: hidden;
 }
 
 body.theme-modern2 .topic .accordion-statement.expanded .accordion-statement-body {
-    display: block;
+    grid-template-rows: 1fr;
+    opacity: 1;
+    padding: 0 1.25rem 1.25rem;
 }
 
 /* Nested assets: left indent + dashed left border to convey hierarchy. */
@@ -4293,5 +4582,43 @@ body.theme-modern { --plyr-color-main: #4f46e5; }
 .sidebar-logout:hover {
     background-color: var(--bg-surface);
     color: var(--text-primary);
+}
+
+/* ============================================================================
+   Motion discipline — respect users who ask for reduced motion. Disable the
+   lift/transform micro-interactions and the accordion height ease; keep state
+   changes instant but intact.
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+    }
+
+    .card:hover,
+    .evidence-card:hover,
+    .feature-card:hover,
+    .featured-card:hover,
+    .statement:hover,
+    .accordion-statement:hover,
+    body.theme-modern .topic .statement:hover {
+        transform: none !important;
+    }
+
+    .hover-actions {
+        transform: none !important;
+    }
+
+    body.theme-modern2 .topic .accordion-statement-body {
+        transition: none !important;
+    }
+
+    body.theme-modern2 .topic .accordion-statement.expanded .accordion-statement-body {
+        padding: 0 1.25rem 1.25rem !important;
+    }
 }
 

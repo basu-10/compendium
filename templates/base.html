@@ -43,6 +43,18 @@
             if (localStorage.getItem('compendium-sidebar') === 'collapsed') {
                 document.documentElement.classList.add('sidebar-collapsed');
             }
+            // Apply the stored appearance (data-theme) before first paint so the
+            // dark palette doesn't flash in from light. "system" removes the
+            // attribute and lets prefers-color-scheme drive the palette.
+            var appearance = localStorage.getItem('compendium-appearance') || 'system';
+            var root = document.documentElement;
+            if (appearance === 'dark') {
+                root.setAttribute('data-theme', 'dark');
+            } else if (appearance === 'light') {
+                root.setAttribute('data-theme', 'light');
+            } else {
+                root.removeAttribute('data-theme');
+            }
         })();
     </script>
     {% block head %}{% endblock %}
@@ -229,6 +241,30 @@
                     </div>
                 </fieldset>
                 <fieldset class="settings-group">
+                    <legend>Appearance</legend>
+                    <div class="theme-option">
+                        <input type="radio" name="appearance" id="appearance-system" value="system">
+                        <label for="appearance-system">
+                            <span class="theme-option-name">System</span>
+                            <span class="theme-option-desc">Follow your device's light/dark setting.</span>
+                        </label>
+                    </div>
+                    <div class="theme-option">
+                        <input type="radio" name="appearance" id="appearance-light" value="light">
+                        <label for="appearance-light">
+                            <span class="theme-option-name">Light</span>
+                            <span class="theme-option-desc">Always use the light palette.</span>
+                        </label>
+                    </div>
+                    <div class="theme-option">
+                        <input type="radio" name="appearance" id="appearance-dark" value="dark">
+                        <label for="appearance-dark">
+                            <span class="theme-option-name">Dark</span>
+                            <span class="theme-option-desc">Always use the dark palette.</span>
+                        </label>
+                    </div>
+                </fieldset>
+                <fieldset class="settings-group">
                     <legend>Data</legend>
                     <div class="settings-data-actions">
                         <button type="button" class="btn-primary btn-block" id="settings-export">Export account (.zip)</button>
@@ -258,6 +294,10 @@
                 document.querySelectorAll('#settings-modal input[name="theme"]').forEach(function(input) {
                     input.checked = (input.value === current);
                 });
+                const appearance = localStorage.getItem('compendium-appearance') || 'system';
+                document.querySelectorAll('#settings-modal input[name="appearance"]').forEach(function(input) {
+                    input.checked = (input.value === appearance);
+                });
                 openModal('settings-modal');
             }
 
@@ -278,6 +318,17 @@
                     localStorage.setItem(STORAGE_KEY, theme);
                     body.className = body.className.replace(/\btheme-\S+/g, '').trim();
                     body.classList.add('theme-' + theme);
+                    const appearance = document.querySelector('#settings-modal input[name="appearance"]:checked');
+                    const mode = appearance ? appearance.value : 'system';
+                    localStorage.setItem('compendium-appearance', mode);
+                    const root = document.documentElement;
+                    if (mode === 'dark') {
+                        root.setAttribute('data-theme', 'dark');
+                    } else if (mode === 'light') {
+                        root.setAttribute('data-theme', 'light');
+                    } else {
+                        root.removeAttribute('data-theme');
+                    }
                     closeModal('settings-modal');
                     location.reload();
                 });

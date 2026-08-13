@@ -1456,6 +1456,122 @@ function flashMessage(text) {
     el.__t = setTimeout(function() { el.classList.remove('show'); }, 3500);
 }
 
+// --- Modern 2: accordion statement layout ---
+// Statements are accordion rows: clicking the header expands/collapses the row
+// to reveal its nested assets. Only one statement is open at a time. Asset cards
+// reuse the existing evidence-card markup and expand/edit behaviour.
+function initModern2Accordion() {
+    const accordion = document.getElementById('statement-accordion');
+    if (!accordion) return;
+
+    document.querySelectorAll('#statement-accordion .accordion-statement').forEach(function(row) {
+        if (row.dataset.bound === '1') return;
+        row.dataset.bound = '1';
+
+        const header = row.querySelector('.accordion-statement-header');
+        if (header) {
+            header.addEventListener('click', function(event) {
+                // Hover-action buttons (edit/move/delete/attach) own their clicks.
+                if (event.target.closest('.hover-actions, a, button')) return;
+                toggleModern2Statement(row);
+            });
+            header.addEventListener('keydown', function(event) {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    if (event.target !== header && !event.target.closest('.hover-actions')) return;
+                    event.preventDefault();
+                    toggleModern2Statement(row);
+                }
+            });
+        }
+
+        // Bind the statement's asset cards for expand/edit exactly like the grid.
+        row.querySelectorAll('.asset-list .evidence-card').forEach(function(card) {
+            if (card.dataset.bound === '1') return;
+            card.dataset.bound = '1';
+            bindItemInteractions(card, {
+                expand: function() { expandEvidenceCard(card); },
+                collapse: function() { collapseEvidenceCard(card); },
+                edit: function() { editEvidence(card.dataset.id); },
+            });
+        });
+        row.querySelectorAll('.asset-list .add-card').forEach(function(btn) {
+            attachAddAssetContextMenu(btn, btn.dataset.statementId);
+        });
+
+        // Per-statement asset drag reorder.
+        const assetList = row.querySelector('.asset-list');
+        if (assetList && CAN_EDIT && typeof Sortable !== 'undefined') {
+            new Sortable(assetList, {
+                handle: '.drag-handle',
+                draggable: '.evidence-card',
+                filter: '.add-card',
+                animation: 150,
+                onEnd: function() {
+                    persistOrder('reorder_attachments', {StatementId: row.dataset.statementId}, assetList, '.evidence-card', 'data-id');
+                }
+            });
+        }
+    });
+
+    buildAddStatementTileModern2();
+    initEvidenceOutsideCollapse();
+}
+
+// Expand/collapse one accordion row; collapse all others (single-open accordion).
+function toggleModern2Statement(row) {
+    const willExpand = !row.classList.contains('expanded');
+    document.querySelectorAll('#statement-accordion .accordion-statement.expanded').forEach(function(other) {
+        if (other !== row) {
+            other.classList.remove('expanded');
+            other.setAttribute('aria-expanded', 'false');
+        }
+    });
+    row.classList.toggle('expanded', willExpand);
+    row.setAttribute('aria-expanded', willExpand ? 'true' : 'false');
+}
+
+// Trailing "Add Statement" tile for the Modern 2 accordion, parked in its own slot.
+function buildAddStatementTileModern2() {
+    const slot = document.getElementById('add-statement-slot-modern2');
+    if (!slot || !CAN_EDIT) return;
+    slot.innerHTML = '';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'add-row add-row-modern2';
+    btn.id = 'add-statement-row-modern2';
+    btn.addEventListener('click', function() {
+        openModal('add-statement-' + window.location.pathname.split('/').filter(Boolean).pop());
+    });
+
+    const plus = document.createElement('span');
+    plus.className = 'add-row-plus';
+    plus.setAttribute('aria-hidden', 'true');
+    plus.textContent = '+';
+    btn.appendChild(plus);
+
+    const label = document.createElement('span');
+    label.className = 'add-row-label';
+    label.textContent = 'Add Statement';
+    btn.appendChild(label);
+
+    slot.appendChild(btn);
+}
+
+// Sortable instance for the Modern 2 statement list (accordion container).
+function initModern2DragReorder() {
+    const accordion = document.getElementById('statement-accordion');
+    if (!accordion || !CAN_EDIT || typeof Sortable === 'undefined') return;
+    new Sortable(accordion, {
+        handle: '.drag-handle',
+        draggable: '.accordion-statement',
+        animation: 150,
+        onEnd: function() {
+            persistOrder('reorder_statements', {TopicId: undefined}, accordion, '.accordion-statement', 'data-statement-id');
+        }
+    });
+}
+
 // --- Drag-to-reorder (SortableJS) ---
 // A single Sortable instance is reused for the statement list; the assets grid
 // gets a fresh instance on each selection so its closure always knows the
@@ -1464,7 +1580,7 @@ let statementSortable = null;
 
 function initDragReorder() {
     const list = document.getElementById('statement-list');
-    if (!list || typeof Sortable === 'undefined') return;
+    if (!list || typeof Sortable === 'undefined' || document.body.classList.contains('theme-modern2')) return;
     statementSortable = new Sortable(list, {
         handle: '.drag-handle',
         draggable: '.statement',

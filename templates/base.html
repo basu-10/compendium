@@ -220,6 +220,13 @@
                             <span class="theme-option-desc">The previous split-pane layout.</span>
                         </label>
                     </div>
+                    <div class="theme-option">
+                        <input type="radio" name="theme" id="theme-modern2" value="modern2">
+                        <label for="theme-modern2">
+                            <span class="theme-option-name">Modern 2</span>
+                            <span class="theme-option-desc">Topic → Statement → Assets. Statements expand/collapse to reveal nested assets (accordion).</span>
+                        </label>
+                    </div>
                 </fieldset>
                 <fieldset class="settings-group">
                     <legend>Data</legend>
@@ -269,7 +276,7 @@
                     const selected = document.querySelector('#settings-modal input[name="theme"]:checked');
                     const theme = selected ? selected.value : 'modern';
                     localStorage.setItem(STORAGE_KEY, theme);
-                    body.classList.remove('theme-legacy', 'theme-modern');
+                    body.className = body.className.replace(/\btheme-\S+/g, '').trim();
                     body.classList.add('theme-' + theme);
                     closeModal('settings-modal');
                     location.reload();

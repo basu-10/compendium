@@ -57,6 +57,59 @@
         <p><strong>Overview:</strong> {{ topic.description or 'No description provided for this topic.' }}</p>
     </div>
 
+    <!-- Modern 2 layout: accordion of statements. Hidden unless body.theme-modern2. -->
+    <div class="modern2-layout" id="modern2-layout">
+        <div class="guidance-banner" role="note">
+            <span class="guidance-icon" aria-hidden="true">&#9432;</span>
+            Click any statement to expand and view its assets.
+        </div>
+        <div class="statement-accordion" id="statement-accordion">
+            {% for statement in statements %}
+                {% set stmt_edit_modal_id = 'edit-statement-' ~ statement.id %}
+                {% set stmt_delete_modal_id = 'delete-statement-' ~ statement.id %}
+                {% set attach_modal_id = 'attach-' ~ statement.id %}
+                <div class="accordion-statement statement"
+                     data-statement-id="{{ statement.id }}"
+                     data-edit-modal="{{ stmt_edit_modal_id }}"
+                     tabindex="0" role="button" aria-expanded="false">
+                    <div class="accordion-statement-header">
+                        <span class="chevron" aria-hidden="true">&#9654;</span>
+                        <span class="accordion-statement-text">{{ statement.text }}</span>
+                        {% set summary = evidence_summary(attachments_by_statement.get(statement.id)) %}
+                        <span class="asset-count-badge">{{ summary.total }} {{ 'asset' if summary.total == 1 else 'assets' }}</span>
+                        {% set edit_url = url_for('update_statement') %}
+                        {% set delete_url = url_for('delete_statement', statement_id=statement.id) %}
+                        {% set delete_title = 'Delete Statement' %}
+                        {% set delete_message = 'Are you sure you want to delete this statement and its attachments?' %}
+                        {% set attach_url = url_for('create_attachment') %}
+                        {% set duplicate_url = url_for('duplicate_statement', statement_id=statement.id) %}
+                        {% set move_url = url_for('move_statement', statement_id=statement.id) %}
+                        {% set move_modal_id = 'move-statement-' ~ statement.id %}
+                        {% if can_edit %}{% include "components/hover_actions.html" with context %}{% endif %}
+                    </div>
+                    <div class="accordion-statement-body">
+                        <div class="asset-list" data-statement-id="{{ statement.id }}">
+                            {% for att in attachments_by_statement.get(statement.id, []) %}
+                                {% include "components/evidence_card.html" with context %}
+                            {% endfor %}
+                            {% if can_edit %}
+                            <button type="button" class="add-card add-card-inline"
+                                    data-statement-id="{{ statement.id }}"
+                                    onclick="openAttachModal('{{ statement.id }}')">
+                                <span class="add-card-plus" aria-hidden="true">+</span>
+                                <span class="add-card-label">Add asset</span>
+                            </button>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+            {% if can_edit %}
+            <div id="add-statement-slot-modern2"></div>
+            {% endif %}
+        </div>
+    </div>
+
     <!-- Split Layout with Split.js -->
     <div class="split-layout" id="split-layout">
         <div class="left-pane" id="claims-pane">
@@ -261,6 +314,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // panes), so skip Split.js — its injected inline width/flex would fight the
     // Modern CSS. Same for the mobile accordion, which assumes two panes.
     const isModern = document.body.classList.contains('theme-modern');
+    const isModern2 = document.body.classList.contains('theme-modern2');
+
+    if (isModern2) {
+        initModern2Accordion();
+        initModern2DragReorder();
+        initHoverActions();
+        return;
+    }
 
     if (!isModern && typeof Split !== 'undefined') {
         const isMobile = window.innerWidth < 768;

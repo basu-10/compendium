@@ -10,6 +10,30 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     {% block head %}{% endblock %}
+    <script>
+        // Apply the stored theme + appearance before first paint so the chosen
+        // dark palette (or layout) carries across every page, including the
+        // public Home/About shells that share style.css but not base.html.
+        (function() {
+            var theme = localStorage.getItem('compendium-theme') || 'modern2';
+            document.documentElement.classList.add('theme-' + theme);
+            var applyTheme = function() { document.body.classList.add('theme-' + theme); };
+            if (document.body) {
+                applyTheme();
+            } else {
+                document.addEventListener('DOMContentLoaded', applyTheme);
+            }
+            var appearance = localStorage.getItem('compendium-appearance') || 'system';
+            var root = document.documentElement;
+            if (appearance === 'dark') {
+                root.setAttribute('data-theme', 'dark');
+            } else if (appearance === 'light') {
+                root.setAttribute('data-theme', 'light');
+            } else {
+                root.removeAttribute('data-theme');
+            }
+        })();
+    </script>
 </head>
 <body class="public-body">
     <header class="public-header">

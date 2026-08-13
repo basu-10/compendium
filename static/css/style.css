@@ -532,9 +532,13 @@ p {
 /* Split Layout */
 .split-layout {
     display: flex;
-    gap: 1rem;
     height: calc(100vh - 220px);
     min-height: 400px;
+}
+
+/* Split.js removes the gap and manages spacing via its own gutter */
+.split-layout.split-initialized {
+    gap: 0;
 }
 
 .left-pane {
@@ -1897,17 +1901,63 @@ p {
 }
 
 /* Split.js Gutter */
-
-/* Split.js Gutter */
 .gutter {
     background-color: var(--border);
     cursor: col-resize;
     flex-shrink: 0;
+    flex-grow: 0;
     width: 8px;
+    flex-basis: 8px;
+    transition: background-color 0.2s ease;
+    z-index: 10;
+    pointer-events: auto;
+}
+
+.gutter.gutter-horizontal {
+    height: 100%;
+    min-height: 100%;
+}
+
+.gutter::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 4px;
+    height: 40px;
+    background: var(--text-muted);
+    border-radius: 2px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
 }
 
 .gutter:hover {
-    background-color: var(--text-muted);
+    background-color: var(--accent-teal);
+}
+
+.gutter:hover::before {
+    opacity: 1;
+    background: var(--bg-surface);
+}
+
+.gutter:active {
+    background-color: var(--accent-teal-active);
+}
+
+.gutter:active::before {
+    background: var(--text-primary);
+}
+
+/* Ensure panes don't interfere with gutter events */
+.split-layout {
+    position: relative;
+}
+
+.left-pane,
+.right-pane {
+    position: relative;
+    z-index: 1;
 }
 
 /* Hover Actions */

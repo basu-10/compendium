@@ -257,20 +257,34 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!isModern && typeof Split !== 'undefined') {
         const isMobile = window.innerWidth < 768;
         if (!isMobile) {
-            const split = Split(['#claims-pane', '#evidence-pane'], {
-                direction: 'horizontal',
-                sizes: [35, 65],
-                minSize: 200,
-                gutterSize: 8,
-                cursor: 'col-resize',
-                onDrag: function() {
-                    localStorage.setItem('splitSizes', JSON.stringify(split.getSizes()));
-                }
-            });
+            const claimsPane = document.getElementById('claims-pane');
+            const evidencePane = document.getElementById('evidence-pane');
+            const splitLayout = document.getElementById('split-layout');
 
-            const savedSizes = JSON.parse(localStorage.getItem('splitSizes'));
-            if (savedSizes) {
-                split.setSizes(savedSizes);
+            try {
+                // Pass DOM elements directly for more reliable initialization
+                const split = Split([claimsPane, evidencePane], {
+                    direction: 'horizontal',
+                    sizes: [35, 65],
+                    minSize: 200,
+                    gutterSize: 8,
+                    cursor: 'col-resize',
+                    onDrag: function() {
+                        localStorage.setItem('splitSizes', JSON.stringify(split.getSizes()));
+                    }
+                });
+
+                // Add class to remove CSS gap since Split.js manages its own gutter
+                if (splitLayout) {
+                    splitLayout.classList.add('split-initialized');
+                }
+
+                const savedSizes = JSON.parse(localStorage.getItem('splitSizes'));
+                if (savedSizes) {
+                    split.setSizes(savedSizes);
+                }
+            } catch (e) {
+                console.error('Split.js initialization error:', e);
             }
         }
     }

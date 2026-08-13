@@ -1524,6 +1524,19 @@ function initModern2Accordion() {
 
     buildAddStatementTileModern2();
     initEvidenceOutsideCollapse();
+
+    // After a save (add/edit asset or statement) the page reloads with ?stmt=
+    // set. Re-open that statement and scroll it into view so the user lands back
+    // where they were instead of at the top of the collapsed accordion.
+    if (ACTIVE_STATEMENT_ID !== null) {
+        const activeRow = document.querySelector(
+            '#statement-accordion .accordion-statement[data-statement-id="' + ACTIVE_STATEMENT_ID + '"]'
+        );
+        if (activeRow) {
+            toggleModern2Statement(activeRow);
+            activeRow.scrollIntoView({ block: 'center' });
+        }
+    }
 }
 
 // Expand/collapse one accordion row; collapse all others (single-open accordion).

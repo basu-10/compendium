@@ -77,7 +77,9 @@
                         <span class="accordion-statement-text">{{ statement.text }}</span>
                         {% set summary = evidence_summary(attachments_by_statement.get(statement.id)) %}
                         <span class="asset-count-badge">{{ summary.total }} {{ 'asset' if summary.total == 1 else 'assets' }}</span>
+                        {% set edit_modal_id = stmt_edit_modal_id %}
                         {% set edit_url = url_for('update_statement') %}
+                        {% set delete_modal_id = stmt_delete_modal_id %}
                         {% set delete_url = url_for('delete_statement', statement_id=statement.id) %}
                         {% set delete_title = 'Delete Statement' %}
                         {% set delete_message = 'Are you sure you want to delete this statement and its attachments?' %}

@@ -694,6 +694,43 @@ p {
     align-items: center;
 }
 
+/* The assets pane header groups the bulk-expand control and the search box
+   together on the right so both stay in the toolbar regardless of width. */
+.pane-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.pane-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background-color: var(--bg-muted);
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.2s, background-color 0.2s, color 0.2s;
+}
+
+.pane-action-btn:hover {
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+.pane-action-btn[aria-pressed="true"] {
+    color: var(--accent-teal);
+    border-color: var(--accent-teal);
+}
+
+.pane-action-btn svg {
+    display: block;
+}
+
 /* In-page search/filter form (domain + all-domains pages) */
 .search-filter {
     display: flex;

@@ -188,13 +188,13 @@ function initEvidenceCards() {
 // "click inside to collapse" behaviour so expanded text stays selectable.
 function initEvidenceOutsideCollapse() {
     document.addEventListener('click', function(event) {
-        const expanded = document.querySelector('#evidence-content .evidence-card.expanded');
-        if (!expanded) return;
-        // Ignore clicks that belong to this card (its buttons/typography) or to
-        // a modal (e.g. the confirm-delete dialog) so it can be acted on.
-        if (expanded.contains(event.target)) return;
+        const expanded = document.querySelectorAll('#evidence-content .evidence-card.expanded');
+        if (!expanded.length) return;
+        // A click inside any expanded card (or its buttons/typography), or inside
+        // a modal (e.g. the confirm-delete dialog), should not collapse anything.
+        if (event.target.closest('.evidence-card.expanded')) return;
         if (event.target.closest('.modal-overlay')) return;
-        collapseEvidenceCard(expanded);
+        collapseAllEvidence();
     }, true);
 }
 
@@ -344,11 +344,15 @@ function editStatement(row) {
 // --- Evidence cards: expand in place / edit ---
 // Cards expand both ways: they span the full grid width and grow taller, up to
 // a capped height after which the body scrolls.
-function expandEvidenceCard(card) {
-    // Only one card is expanded at a time; collapse any others first.
-    document.querySelectorAll('#evidence-content .evidence-card.expanded').forEach(function(other) {
-        if (other !== card) collapseEvidenceCard(other);
-    });
+function expandEvidenceCard(card, opts) {
+    // By default a single click keeps only one card expanded at a time; the
+    // "expand all" path passes { solo: false } to allow many cards open at once.
+    const solo = !(opts && opts.solo === false);
+    if (solo) {
+        document.querySelectorAll('#evidence-content .evidence-card.expanded').forEach(function(other) {
+            if (other !== card) collapseEvidenceCard(other);
+        });
+    }
 
     card.classList.add('expanded');
     card.setAttribute('aria-expanded', 'true');
@@ -358,7 +362,10 @@ function expandEvidenceCard(card) {
     full.hidden = false;
 
     // Content is fetched once and cached in the DOM for later re-expansions.
-    if (full.dataset.loaded === '1') return;
+    if (full.dataset.loaded === '1') {
+        syncExpandAllButton();
+        return;
+    }
     full.innerHTML = '';
     full.appendChild(subText('Loading…'));
 
@@ -372,7 +379,60 @@ function expandEvidenceCard(card) {
         .catch(function() {
             renderEvidenceBody(full, card.dataset.title, card.dataset.type,
                                card.dataset.filename, card.dataset.preview || '');
-        });
+        })
+        .finally(syncExpandAllButton);
+}
+
+// Bind the pane-header "Expand all / Collapse all" toggle. It operates on the
+// assets of the currently selected statement (whatever showEvidence rendered).
+function initExpandAllButton() {
+    const btn = document.getElementById('expand-all-btn');
+    if (!btn) return;
+    btn.addEventListener('click', function() {
+        toggleExpandAll();
+    });
+    syncExpandAllButton();
+}
+
+// Expand every asset belonging to the currently selected statement.
+function expandAllEvidence() {
+    document.querySelectorAll('#evidence-content .evidence-card').forEach(function(card) {
+        expandEvidenceCard(card, { solo: false });
+    });
+}
+
+function collapseAllEvidence() {
+    document.querySelectorAll('#evidence-content .evidence-card.expanded').forEach(function(card) {
+        collapseEvidenceCard(card);
+    });
+    syncExpandAllButton();
+}
+
+// Toggle the expand-all button to reflect / drive the bulk state. When all cards
+// are expanded it collapses them; otherwise it expands them all.
+function toggleExpandAll() {
+    const cards = document.querySelectorAll('#evidence-content .evidence-card');
+    if (!cards.length) return;
+    const allExpanded = Array.prototype.every.call(cards, function(c) {
+        return c.classList.contains('expanded');
+    });
+    if (allExpanded) {
+        collapseAllEvidence();
+    } else {
+        expandAllEvidence();
+    }
+}
+
+// Keep the pane header button's label/state in sync with how many cards are open.
+function syncExpandAllButton() {
+    const btn = document.getElementById('expand-all-btn');
+    if (!btn) return;
+    const cards = document.querySelectorAll('#evidence-content .evidence-card');
+    const expanded = document.querySelectorAll('#evidence-content .evidence-card.expanded');
+    const allExpanded = cards.length > 0 && expanded.length === cards.length;
+    btn.setAttribute('aria-pressed', allExpanded ? 'true' : 'false');
+    const label = btn.querySelector('.pane-action-label');
+    if (label) label.textContent = allExpanded ? 'Collapse all' : 'Expand all';
 }
 
 function collapseEvidenceCard(card) {
@@ -382,6 +442,7 @@ function collapseEvidenceCard(card) {
     if (full) full.hidden = true;
     // Release any Univer canvas mounted inside this card to free memory.
     if (window.COMPENDIUM_EDITORS) COMPENDIUM_EDITORS.teardownUniver();
+    syncExpandAllButton();
 }
 
 function editEvidence(attachmentId) {
@@ -987,6 +1048,9 @@ function showEvidence(statementId) {
         titleEl.textContent = 'Assets';
     }
     initAssetSortable(statementId);
+    // The grid was rebuilt, so the expand-all button no longer reflects the
+    // (now-closed) cards of a different statement.
+    syncExpandAllButton();
 }
 
 function buildAddEvidenceCard(statementId, isEmpty) {

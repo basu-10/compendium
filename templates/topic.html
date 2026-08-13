@@ -119,9 +119,17 @@
         <div class="right-pane" id="evidence-pane">
             <div class="pane-header">
                 <h3 id="evidence-pane-title">Assets</h3>
-                <div class="pane-search">
-                    <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
-                    <input type="text" name="q" id="pane-search-input" value="{{ q or '' }}" placeholder="Search assets..." aria-label="Search within this topic">
+                <div class="pane-header-actions">
+                    <button type="button" class="pane-action-btn" id="expand-all-btn"
+                            aria-pressed="false" title="Expand all assets for this statement"
+                            aria-label="Expand all assets">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>
+                        <span class="pane-action-label">Expand all</span>
+                    </button>
+                    <div class="pane-search">
+                        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+                        <input type="text" name="q" id="pane-search-input" value="{{ q or '' }}" placeholder="Search assets..." aria-label="Search within this topic">
+                    </div>
                 </div>
             </div>
             <div class="evidence-grid" id="evidence-content">
@@ -293,6 +301,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initEvidenceCards();
     initStatements();
     initPaneSearch();
+    initExpandAllButton();
     if (!isModern) initMobileAccordion();
     initDragReorder();
     initAssetDropzone();

@@ -3309,17 +3309,16 @@ p {
 }
 
 /* --- Themes / layouts ---
- * "legacy" is the current layout (the default) and keeps working unchanged.
- * "modern" is scaffolded here as the future theme 2; selecting it currently
- * only triggers a not-implemented alert. Styles for theme-modern go below this
- * block when the new layout is built out. */
+ * "modern" is the current default layout (topic-page-only top/bottom layout).
+ * "legacy" is the previous split-pane layout, selectable via Settings. */
 body.theme-legacy .app-layout {
-    /* Current/default layout. Intentionally empty so legacy has no overrides
+    /* Legacy layout. Intentionally empty so legacy has no overrides
      * and continues to render exactly as before. */
 }
 
 body.theme-modern .app-layout {
-    /* TODO: theme 2 layout styles go here. */
+    /* Modern is the default topic-page layout. Its topic-page styles are
+     * scoped to body.theme-modern .topic below. */
 }
 
 /* Theme 2 (Modern) — topic-page-only top/bottom layout, scoped to

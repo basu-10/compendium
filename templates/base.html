@@ -29,16 +29,16 @@
     <script src="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.polyfilled.js"></script>
     <script>
         // Apply the stored theme and sidebar state before first paint to avoid a
-        // flash of the default layout and a reload-loss of the selection.
+        // flash of the default layout and a reload-loss of the selection. Modern
+        // is the default layout; legacy remains available via Settings.
         (function() {
-            var theme = localStorage.getItem('compendium-theme') || 'legacy';
+            var theme = localStorage.getItem('compendium-theme') || 'modern';
             document.documentElement.classList.add('theme-' + theme);
+            var apply = function() { document.body.className = 'theme-' + theme; };
             if (document.body) {
-                document.body.className = 'theme-' + theme;
+                apply();
             } else {
-                document.addEventListener('DOMContentLoaded', function() {
-                    document.body.className = 'theme-' + theme;
-                });
+                document.addEventListener('DOMContentLoaded', apply);
             }
             if (localStorage.getItem('compendium-sidebar') === 'collapsed') {
                 document.documentElement.classList.add('sidebar-collapsed');
@@ -47,7 +47,7 @@
     </script>
     {% block head %}{% endblock %}
 </head>
-<body class="theme-legacy">
+<body class="theme-modern">
     <div class="app-layout">
         <aside class="sidebar" id="sidebar">
             <button type="button" class="sidebar-toggle" id="sidebar-collapse" title="Collapse sidebar" aria-label="Collapse sidebar">
@@ -207,17 +207,17 @@
                 <fieldset class="settings-group">
                     <legend>Layout</legend>
                     <div class="theme-option">
-                        <input type="radio" name="theme" id="theme-legacy" value="legacy" checked>
-                        <label for="theme-legacy">
-                            <span class="theme-option-name">Legacy</span>
-                            <span class="theme-option-desc">The current layout.</span>
+                        <input type="radio" name="theme" id="theme-modern" value="modern" checked>
+                        <label for="theme-modern">
+                            <span class="theme-option-name">Modern</span>
+                            <span class="theme-option-desc">The current layout. Topic page: statement cards on top, bento assets below.</span>
                         </label>
                     </div>
                     <div class="theme-option">
-                        <input type="radio" name="theme" id="theme-modern" value="modern">
-                        <label for="theme-modern">
-                            <span class="theme-option-name">Modern</span>
-                            <span class="theme-option-desc">Topic page: statement cards on top, bento assets below.</span>
+                        <input type="radio" name="theme" id="theme-legacy" value="legacy">
+                        <label for="theme-legacy">
+                            <span class="theme-option-name">Legacy</span>
+                            <span class="theme-option-desc">The previous split-pane layout.</span>
                         </label>
                     </div>
                 </fieldset>
@@ -247,7 +247,7 @@
             const body = document.body;
 
             function openSettings() {
-                const current = localStorage.getItem(STORAGE_KEY) || 'legacy';
+                const current = localStorage.getItem(STORAGE_KEY) || 'modern';
                 document.querySelectorAll('#settings-modal input[name="theme"]').forEach(function(input) {
                     input.checked = (input.value === current);
                 });
@@ -267,7 +267,7 @@
             if (saveBtn) {
                 saveBtn.addEventListener('click', function() {
                     const selected = document.querySelector('#settings-modal input[name="theme"]:checked');
-                    const theme = selected ? selected.value : 'legacy';
+                    const theme = selected ? selected.value : 'modern';
                     localStorage.setItem(STORAGE_KEY, theme);
                     body.classList.remove('theme-legacy', 'theme-modern');
                     body.classList.add('theme-' + theme);

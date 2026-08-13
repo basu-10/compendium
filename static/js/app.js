@@ -1484,6 +1484,15 @@ function initModern2Accordion() {
             });
         }
 
+        // Clicking anywhere on the card body (outside the header) also toggles
+        // the row — but never the hover-action buttons (edit/move/delete/attach),
+        // the nested asset cards, or their own controls.
+        row.addEventListener('click', function(event) {
+            if (event.target.closest('.accordion-statement-header')) return;
+            if (event.target.closest('.hover-actions, a, button, .evidence-card')) return;
+            toggleModern2Statement(row);
+        });
+
         // Bind the statement's asset cards for expand/edit exactly like the grid.
         row.querySelectorAll('.asset-list .evidence-card').forEach(function(card) {
             if (card.dataset.bound === '1') return;

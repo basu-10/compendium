@@ -29,10 +29,10 @@
     <script src="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.polyfilled.js"></script>
     <script>
         // Apply the stored theme and sidebar state before first paint to avoid a
-        // flash of the default layout and a reload-loss of the selection. Modern
-        // is the default layout; legacy remains available via Settings.
+        // flash of the default layout and a reload-loss of the selection. Modern 2
+        // is the default layout; modern/legacy remain available via Settings.
         (function() {
-            var theme = localStorage.getItem('compendium-theme') || 'modern';
+            var theme = localStorage.getItem('compendium-theme') || 'modern2';
             document.documentElement.classList.add('theme-' + theme);
             var apply = function() { document.body.className = 'theme-' + theme; };
             if (document.body) {
@@ -47,7 +47,7 @@
     </script>
     {% block head %}{% endblock %}
 </head>
-<body class="theme-modern">
+<body class="theme-modern2">
     <div class="app-layout">
         <aside class="sidebar" id="sidebar">
             <button type="button" class="sidebar-toggle" id="sidebar-collapse" title="Collapse sidebar" aria-label="Collapse sidebar">
@@ -207,7 +207,7 @@
                 <fieldset class="settings-group">
                     <legend>Layout</legend>
                     <div class="theme-option">
-                        <input type="radio" name="theme" id="theme-modern" value="modern" checked>
+                        <input type="radio" name="theme" id="theme-modern" value="modern">
                         <label for="theme-modern">
                             <span class="theme-option-name">Modern</span>
                             <span class="theme-option-desc">The current layout. Topic page: statement cards on top, bento assets below.</span>
@@ -221,7 +221,7 @@
                         </label>
                     </div>
                     <div class="theme-option">
-                        <input type="radio" name="theme" id="theme-modern2" value="modern2">
+                        <input type="radio" name="theme" id="theme-modern2" value="modern2" checked>
                         <label for="theme-modern2">
                             <span class="theme-option-name">Modern 2</span>
                             <span class="theme-option-desc">Topic → Statement → Assets. Statements expand/collapse to reveal nested assets (accordion).</span>

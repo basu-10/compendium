@@ -104,7 +104,44 @@ const COMPENDIUM_EDITORS = (function () {
             ckeditorInstances.push(ckeditor);
 
             if (!readOnly) {
-                // Return an object with getData() for form sync
+                // Paste an image straight from the clipboard (Ctrl/Cmd+V of a
+                // screenshot, copied image, etc.). CKEditor's default pipeline
+                // only handles images via an upload adapter, so we intercept the
+                // native paste, read any image blob, and insert it as a Base64
+                // data URL. This covers both the normal and fullscreen edit views
+                // since they share the same editor instance.
+                ckeditor.editing.view.document.on('paste', (evt, data) => {
+                    const dataTransfer =
+                        (data && data.dataTransfer) ||
+                        (evt && evt.dataTransfer) ||
+                        (evt && evt.domEvent && evt.domEvent.clipboardData) ||
+                        null;
+                    if (!dataTransfer || !dataTransfer.items) return;
+                    const items = Array.from(dataTransfer.items);
+                    const imgItem = items.find(
+                        it => it.kind === 'file' && it.type.indexOf('image/') === 0
+                    );
+                    if (!imgItem) return;
+
+                    evt.stop();
+                    evt.preventDefault();
+                    const file = imgItem.getAsFile();
+                    if (!file) return;
+
+                    const reader = new FileReader();
+                    reader.onload = function () {
+                        const base64 = reader.result;
+                        if (!base64) return;
+                        ckeditor.model.change(() => {
+                            ckeditor.model.insertObject(
+                                { src: base64 },
+                                ckeditor.model.document.selection
+                            );
+                        });
+                    };
+                    reader.readAsDataURL(file);
+                });
+
                 return {
                     getData: () => ckeditor.getData(),
                     editor: ckeditor,

@@ -4367,6 +4367,17 @@ body.theme-modern {
     background: var(--ck-color-table-selected-background) !important;
 }
 
+.ck-editor__editable img {
+    max-width: 100%;
+    max-height: 320px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+}
+
+.ck-editor__editable figure.image {
+    max-width: 100%;
+}
+
 /* --- Univer (spreadsheet) --- */
 /* Univer reads these --univer-* custom properties when present; we map them
    to the current theme so the sheet's chrome matches the surrounding UI. */

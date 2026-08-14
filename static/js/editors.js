@@ -35,11 +35,14 @@ const COMPENDIUM_EDITORS = (function () {
     async function insertImageFile(editor, file) {
         if (!file) return;
 
-        // Show a temporary placeholder while uploading
+        // Insert a temporary placeholder and KEEP A DIRECT REFERENCE to the
+        // element. We must not rely on the selection after the async upload,
+        // because the user may have moved the caret in the meantime.
         const placeholderSrc = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+        let imageElement = null;
         editor.model.change(function (writer) {
-            const image = writer.createElement('imageBlock', { src: placeholderSrc });
-            editor.model.insertContent(image);
+            imageElement = writer.createElement('imageBlock', { src: placeholderSrc });
+            editor.model.insertContent(imageElement);
         });
 
         const formData = new FormData();
@@ -54,33 +57,18 @@ const COMPENDIUM_EDITORS = (function () {
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Upload failed');
 
-            // Replace placeholder with actual image URL
+            // Replace the placeholder's src with the real server URL on the exact
+            // element we inserted.
             editor.model.change(function (writer) {
-                const selection = editor.model.document.selection;
-                const range = selection.getFirstRange();
-                if (!range) return;
-
-                // Find the image element at the selection
-                for (const value of range.getItems()) {
-                    if (value.is('element', 'imageBlock')) {
-                        writer.setAttribute('src', data.url, value);
-                        break;
-                    }
+                if (imageElement) {
+                    writer.setAttribute('src', data.url, imageElement);
                 }
             });
         } catch (err) {
             console.error('Image upload failed:', err);
-            // On failure, remove the placeholder
+            // On failure, remove the placeholder element we inserted.
             editor.model.change(function (writer) {
-                const selection = editor.model.document.selection;
-                const range = selection.getFirstRange();
-                if (!range) return;
-                for (const value of range.getItems()) {
-                    if (value.is('element', 'imageBlock')) {
-                        writer.remove(value);
-                        break;
-                    }
-                }
+                if (imageElement) writer.remove(imageElement);
             });
             alert('Failed to upload image: ' + err.message);
         }

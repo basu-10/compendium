@@ -961,6 +961,16 @@ async function populateEditForm(attachmentId) {
                 form._ckResult = result;
                 form.addEventListener('submit', function () {
                     content.value = result.getData();
+                    // Safety net: never submit Base64 image data. If an image
+                    // upload failed or is still pending, the editor holds a
+                    // data: URL that would blow up the request body (413).
+                    if (/src\s*=\s*["']data:image\//i.test(content.value)) {
+                        content.value = content.value.replace(
+                            /<img[^>]*src\s*=\s*["']data:image\/[^"']*["'][^>]*>/gi,
+                            ''
+                        );
+                        alert('One or more images could not be uploaded and were removed. Please re-add them and wait for upload to finish before saving.');
+                    }
                 });
             }
         }

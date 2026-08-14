@@ -4378,6 +4378,33 @@ body.theme-modern {
     max-width: 100%;
 }
 
+.ck-image-insert-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--ck-color-toolbar-border, var(--border));
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    background: var(--bg-muted);
+}
+
+.ck-image-insert-btn {
+    font: inherit;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.3rem 0.6rem;
+    cursor: pointer;
+}
+
+.ck-image-insert-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+}
+
 /* --- Univer (spreadsheet) --- */
 /* Univer reads these --univer-* custom properties when present; we map them
    to the current theme so the sheet's chrome matches the surrounding UI. */

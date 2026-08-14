@@ -29,6 +29,76 @@ const COMPENDIUM_EDITORS = (function () {
         ckeditorInstances = [];
     }
 
+    // Insert an image File/Blob into the editor as a Base64 data URL so it works
+    // without any server-side upload endpoint.
+    function insertImageFile(editor, file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function () {
+            const base64 = reader.result;
+            if (!base64) return;
+            editor.model.change(function () {
+                editor.model.insertObject(
+                    { src: base64 },
+                    editor.model.document.selection
+                );
+            });
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // Read an image from the Async Clipboard API. Some OS/clipboard managers only
+    // expose screenshots here (not via the synchronous paste dataTransfer).
+    async function readImageFromClipboard() {
+        if (!navigator.clipboard || !navigator.clipboard.read) return null;
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+            const type = (item.types || []).find(function (t) {
+                return t.indexOf('image/') === 0;
+            });
+            if (type) {
+                const blob = await item.getType(type);
+                if (blob) return blob;
+            }
+        }
+        return null;
+    }
+
+    // Add an "Insert image from device" button above the editor toolbar that
+    // opens a file picker and inserts the chosen image as Base64.
+    function addImageInsertButton(editor) {
+        const editable = editor.ui.getEditableElement();
+        if (!editable || !editable.parentElement) return;
+        const root = editable.parentElement; // .ck-editor wrapper
+
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/*';
+        fileInput.style.display = 'none';
+        fileInput.addEventListener('change', function () {
+            const file = fileInput.files && fileInput.files[0];
+            if (file) insertImageFile(editor, file);
+            fileInput.value = '';
+        });
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ck-image-insert-btn';
+        btn.textContent = 'Insert image from device';
+        btn.setAttribute('aria-label', 'Insert image from device');
+        btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            fileInput.click();
+        });
+
+        const bar = document.createElement('div');
+        bar.className = 'ck-image-insert-bar';
+        bar.appendChild(btn);
+        bar.appendChild(fileInput);
+
+        root.insertBefore(bar, root.firstChild);
+    }
+
     // ---- CKEditor 5 rich text ---------------------------------------------
     async function renderRichText(container, html, readOnly) {
         if (typeof ClassicEditor === 'undefined') {
@@ -105,42 +175,50 @@ const COMPENDIUM_EDITORS = (function () {
 
             if (!readOnly) {
                 // Paste an image straight from the clipboard (Ctrl/Cmd+V of a
-                // screenshot, copied image, etc.). CKEditor's default pipeline
-                // only handles images via an upload adapter, so we intercept the
-                // native paste, read any image blob, and insert it as a Base64
-                // data URL. This covers both the normal and fullscreen edit views
-                // since they share the same editor instance.
+                // copied image or a screenshot). We intercept the native paste,
+                // read any image blob, and insert it as a Base64 data URL. This
+                // covers both the normal and fullscreen edit views since they
+                // share the same editor instance.
                 ckeditor.editing.view.document.on('paste', (evt, data) => {
                     const dataTransfer =
                         (data && data.dataTransfer) ||
                         (evt && evt.dataTransfer) ||
                         (evt && evt.domEvent && evt.domEvent.clipboardData) ||
                         null;
-                    if (!dataTransfer || !dataTransfer.items) return;
-                    const items = Array.from(dataTransfer.items);
-                    const imgItem = items.find(
-                        it => it.kind === 'file' && it.type.indexOf('image/') === 0
-                    );
-                    if (!imgItem) return;
 
-                    evt.stop();
-                    evt.preventDefault();
-                    const file = imgItem.getAsFile();
-                    if (!file) return;
+                    let imgFile = null;
+                    if (dataTransfer && dataTransfer.items && dataTransfer.items.length) {
+                        const items = Array.from(dataTransfer.items);
+                        const imgItem = items.find(
+                            it => it.kind === 'file' && it.type.indexOf('image/') === 0
+                        );
+                        if (imgItem) imgFile = imgItem.getAsFile();
+                    }
 
-                    const reader = new FileReader();
-                    reader.onload = function () {
-                        const base64 = reader.result;
-                        if (!base64) return;
-                        ckeditor.model.change(() => {
-                            ckeditor.model.insertObject(
-                                { src: base64 },
-                                ckeditor.model.document.selection
-                            );
-                        });
-                    };
-                    reader.readAsDataURL(file);
+                    if (imgFile) {
+                        evt.stop();
+                        evt.preventDefault();
+                        insertImageFile(ckeditor, imgFile);
+                        return;
+                    }
+
+                    // Fallback: screenshots held by some OS/clipboard managers are
+                    // only exposed via the Async Clipboard API, not the synchronous
+                    // paste dataTransfer. Only attempt this when the sync clipboard
+                    // had no items at all, so we never prompt for permission on
+                    // ordinary text/HTML pastes.
+                    const syncEmpty =
+                        !dataTransfer || !dataTransfer.items || dataTransfer.items.length === 0;
+                    if (syncEmpty && navigator.clipboard && navigator.clipboard.read) {
+                        readImageFromClipboard()
+                            .then(function (blob) {
+                                if (blob) insertImageFile(ckeditor, blob);
+                            })
+                            .catch(function () { /* clipboard unreadable */ });
+                    }
                 });
+
+                addImageInsertButton(ckeditor);
 
                 return {
                     getData: () => ckeditor.getData(),

@@ -207,8 +207,8 @@ const COMPENDIUM_EDITORS = (function () {
             if (!readOnly) {
                 // Intercept paste at the native level (capture phase) so we can
                 // handle images before CKEditor's ClipboardObserver processes them.
-                // This prevents "filerepository-no-upload-adapter" errors when
-                // pasting screenshots/blob images.
+                // Images are uploaded to the server and inserted as a /uploads/...
+                // URL reference (never Base64) to keep the saved HTML small.
                 const editable = ckeditor.ui.getEditableElement();
                 if (editable) {
                     editable.addEventListener('paste', (e) => {
@@ -226,17 +226,7 @@ const COMPENDIUM_EDITORS = (function () {
 
                         e.preventDefault();
                         e.stopPropagation();
-
-                        const reader = new FileReader();
-                        reader.onload = function () {
-                            const base64 = reader.result;
-                            if (!base64) return;
-                            ckeditor.model.change(function (writer) {
-                                const image = writer.createElement('imageBlock', { src: base64 });
-                                ckeditor.model.insertContent(image);
-                            });
-                        };
-                        reader.readAsDataURL(file);
+                        insertImageFile(ckeditor, file);
                     }, true); // capture phase - runs before CKEditor's observer
                 }
 

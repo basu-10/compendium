@@ -1953,6 +1953,14 @@ def create_attachment():
     if att_type not in ASSET_TYPES:
         att_type = 'document'
 
+    # Backstop: richtext must never carry Base64 image data (it would blow up the
+    # request body / database). Images are uploaded to /uploads and referenced by
+    # URL. If any slip through, refuse rather than persist a multi-MB blob.
+    if att_type == 'richtext' and 'data:image/' in (content or ''):
+        conn.close()
+        flash('Images must be uploaded, not embedded. Please re-add the image and let it finish uploading before saving.')
+        return redirect(request.referrer or url_for('all_domains'))
+
     try:
         conn.execute(
             'INSERT INTO attachments (statement_id, title, type, content, filename, tags, position) '
@@ -2421,6 +2429,14 @@ def update_attachment():
         # corrupt row that renders as /uploads/<empty>.
         conn.close()
         flash('A file or URL is required for this asset type')
+        return redirect(request.referrer or url_for('all_domains'))
+
+    # Backstop: richtext must never carry Base64 image data (it would blow up the
+    # request body / database). Images are uploaded to /uploads and referenced by
+    # URL. If any slip through, refuse rather than persist a multi-MB blob.
+    if att_type == 'richtext' and 'data:image/' in (content or ''):
+        conn.close()
+        flash('Images must be uploaded, not embedded. Please re-add the image and let it finish uploading before saving.')
         return redirect(request.referrer or url_for('all_domains'))
 
     try:

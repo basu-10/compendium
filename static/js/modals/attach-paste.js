@@ -150,6 +150,15 @@ async function pasteToField(root, statementId, asPlain) {
 
     const editor = editors.get(ckHost) || getCkeditorForHost(ckHost);
     if (editor) {
+        // Strip Base64 image sources: they would blow up the saved payload
+        // (413). Live pasting inside the editor is routed through the upload
+        // endpoint instead, but clipboard HTML containing data: images must
+        // be dropped here.
+        const stripped = html.replace(/<img[^>]*src\s*=\s*["']data:image\/[^"']*["'][^>]*>/gi, '');
+        if (stripped !== html) {
+            html = stripped;
+            flashMessage('Pasted images with embedded data were removed. Paste directly into the editor to upload them.');
+        }
         if (asPlain) {
             const plain = html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ');
             editor.setData(plain);

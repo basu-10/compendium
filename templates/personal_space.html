@@ -29,6 +29,10 @@
         <div class="topic-grid">
             {% for f in private_folders %}
             <div class="folder-card topic-card">
+                {% set folder_edit_modal_id = 'ps-edit-folder-' ~ f.id %}
+                {% set folder_delete_modal_id = 'ps-delete-folder-' ~ f.id %}
+                {% set folder_publish_modal_id = 'ps-publish-folder-' ~ f.id %}
+                {% set can_edit = true %}
                 <details>
                     <summary class="topic-card-summary">
                         <div class="topic-card-name">&#128193; {{ f.name }}</div>
@@ -38,23 +42,67 @@
                             <span>{{ f.topic_count }} topic{{ '' if f.topic_count == 1 else 's' }}</span>
                             {% if f.child_count %}<span>{{ f.child_count }} sub-folder{{ '' if f.child_count == 1 else 's' }}</span>{% endif %}
                         </div>
+                        <div class="hover-actions" onclick="event.stopPropagation();">
+                            <button type="button" class="icon-btn edit-btn" onclick="openModal('{{ folder_edit_modal_id }}'); event.stopPropagation();" title="Rename" aria-label="Rename">✎</button>
+                            <button type="button" class="icon-btn publish-btn" onclick="openModal('{{ folder_publish_modal_id }}'); event.stopPropagation();" title="Make public" aria-label="Make public">🌐</button>
+                            <form method="POST" action="{{ url_for('duplicate_folder', folder_id=f.id) }}" style="display:inline;" onsubmit="event.stopPropagation();">
+                                <button type="submit" class="icon-btn duplicate-btn" onclick="event.stopPropagation();" title="Duplicate" aria-label="Duplicate">⧉</button>
+                            </form>
+                            <button type="button" class="icon-btn delete-btn" onclick="openConfirmModal('{{ folder_delete_modal_id }}', 'Delete Folder', 'Delete &quot;{{ f.name }}&quot; and everything inside it (sub-folders, topics, statements and uploads)?', '{{ url_for('delete_folder', folder_id=f.id) }}'); event.stopPropagation();" title="Delete" aria-label="Delete">🗑</button>
+                        </div>
                     </summary>
                     {% if f.topics %}
                     <div class="folder-contents-inline">
                         {% for t in f.topics %}
-                        <a class="topic-card topic-card-inline" href="{{ url_for('topic', topic_id=t.id) }}">
-                            <div class="topic-card-name">{{ t.name }}</div>
-                            <div class="topic-card-desc">{{ t.description or 'No description' }}</div>
-                            <div class="topic-card-meta">
-                                <span class="is-private-badge">Private</span>
-                                <span>{{ t.statement_count }} statement{{ '' if t.statement_count == 1 else 's' }}</span>
-                                <span>{{ t.attachment_count }} asset{{ '' if t.attachment_count == 1 else 's' }}</span>
+                        {% set t_edit_modal_id = 'ps-edit-topic-' ~ t.id %}
+                        {% set t_delete_modal_id = 'ps-delete-topic-' ~ t.id %}
+                        {% set t_move_modal_id = 'ps-move-topic-' ~ t.id %}
+                        {% set can_edit = true %}
+                        <div class="topic-card topic-card-inline ps-topic-row">
+                            <div>
+                                <div class="topic-card-name">{{ t.name }}</div>
+                                <div class="topic-card-desc">{{ t.description or 'No description' }}</div>
+                                <div class="topic-card-meta">
+                                    <span class="is-private-badge">Private</span>
+                                    <span>{{ t.statement_count }} statement{{ '' if t.statement_count == 1 else 's' }}</span>
+                                    <span>{{ t.attachment_count }} asset{{ '' if t.attachment_count == 1 else 's' }}</span>
+                                </div>
                             </div>
-                        </a>
+                            <div class="hover-actions" onclick="event.stopPropagation();">
+                                <button type="button" class="icon-btn edit-btn" onclick="openModal('{{ t_edit_modal_id }}'); event.stopPropagation();" title="Rename" aria-label="Rename">✎</button>
+                                <button type="button" class="icon-btn move-btn" onclick="openModal('{{ t_move_modal_id }}'); event.stopPropagation();" title="Move to folder" aria-label="Move to folder">⇄</button>
+                                <form method="POST" action="{{ url_for('duplicate_topic', topic_id=t.id) }}" style="display:inline;" onsubmit="event.stopPropagation();">
+                                    <button type="submit" class="icon-btn duplicate-btn" onclick="event.stopPropagation();" title="Duplicate" aria-label="Duplicate">⧉</button>
+                                </form>
+                                <button type="button" class="icon-btn delete-btn" onclick="openConfirmModal('{{ t_delete_modal_id }}', 'Delete Topic', 'Are you sure you want to delete &quot;{{ t.name }}&quot; and all its statements?', '{{ url_for('delete_topic', topic_id=t.id) }}'); event.stopPropagation();" title="Delete" aria-label="Delete">🗑</button>
+                            </div>
+                            {% set modal_id = t_edit_modal_id %}
+                            {% set topic_id = t.id %}
+                            {% set current_name = t.name %}
+                            {% set current_description = t.description or '' %}
+                            {% include "modals/edit_topic.html" with context %}
+                            {% set modal_id = t_delete_modal_id %}
+                            {% include "modals/confirm_delete.html" with context %}
+                            {% set modal_id = t_move_modal_id %}
+                            {% set topic_id = t.id %}
+                            {% set current_folder_id = t.folder_id %}
+                            {% include "modals/move_topic.html" with context %}
+                        </div>
                         {% endfor %}
                     </div>
                     {% endif %}
                 </details>
+                {% set modal_id = folder_edit_modal_id %}
+                {% set folder_id = f.id %}
+                {% set current_name = f.name %}
+                {% set current_description = f.description or '' %}
+                {% set current_is_public = f.is_public %}
+                {% include "modals/edit_folder.html" with context %}
+                {% set modal_id = folder_delete_modal_id %}
+                {% include "modals/confirm_delete.html" with context %}
+                {% set modal_id = folder_publish_modal_id %}
+                {% set folder_id = f.id %}
+                {% include "modals/publish_folder.html" with context %}
             </div>
             {% endfor %}
         </div>
@@ -62,15 +110,43 @@
         {% if private_topics %}
         <div class="topic-grid">
             {% for t in private_topics %}
-            <a class="topic-card" href="{{ url_for('topic', topic_id=t.id) }}">
-                <div class="topic-card-name">{{ t.name }}</div>
-                <div class="topic-card-desc">{{ t.description or 'No description' }}</div>
-                <div class="topic-card-meta">
-                    <span class="is-private-badge">Private</span>
-                    <span>{{ t.statement_count }} statement{{ '' if t.statement_count == 1 else 's' }}</span>
-                    <span>{{ t.attachment_count }} asset{{ '' if t.attachment_count == 1 else 's' }}</span>
+            {% set t_edit_modal_id = 'ps-edit-topic-' ~ t.id %}
+            {% set t_delete_modal_id = 'ps-delete-topic-' ~ t.id %}
+            {% set t_move_modal_id = 'ps-move-topic-' ~ t.id %}
+            {% set can_edit = true %}
+            <div class="topic-card ps-topic-row">
+                <a class="topic-card-link" href="{{ url_for('topic', topic_id=t.id) }}">
+                    <div class="topic-card-name">{{ t.name }}</div>
+                    <div class="topic-card-desc">{{ t.description or 'No description' }}</div>
+                    <div class="topic-card-meta">
+                        <span class="is-private-badge">Private</span>
+                        <span>{{ t.statement_count }} statement{{ '' if t.statement_count == 1 else 's' }}</span>
+                        <span>{{ t.attachment_count }} asset{{ '' if t.attachment_count == 1 else 's' }}</span>
+                    </div>
+                </a>
+                <div class="hover-actions" onclick="event.stopPropagation();">
+                    <button type="button" class="icon-btn edit-btn" onclick="openModal('{{ t_edit_modal_id }}'); event.stopPropagation();" title="Rename" aria-label="Rename">✎</button>
+                    <button type="button" class="icon-btn publish-btn" onclick="openModal('ps-publish-topic-{{ t.id }}'); event.stopPropagation();" title="Make public" aria-label="Make public">🌐</button>
+                    <button type="button" class="icon-btn move-btn" onclick="openModal('{{ t_move_modal_id }}'); event.stopPropagation();" title="Move to folder" aria-label="Move to folder">⇄</button>
+                    <form method="POST" action="{{ url_for('duplicate_topic', topic_id=t.id) }}" style="display:inline;" onsubmit="event.stopPropagation();">
+                        <button type="submit" class="icon-btn duplicate-btn" onclick="event.stopPropagation();" title="Duplicate" aria-label="Duplicate">⧉</button>
+                    </form>
+                    <button type="button" class="icon-btn delete-btn" onclick="openConfirmModal('{{ t_delete_modal_id }}', 'Delete Topic', 'Are you sure you want to delete &quot;{{ t.name }}&quot; and all its statements?', '{{ url_for('delete_topic', topic_id=t.id) }}'); event.stopPropagation();" title="Delete" aria-label="Delete">🗑</button>
                 </div>
-            </a>
+                {% set modal_id = t_edit_modal_id %}
+                {% set topic_id = t.id %}
+                {% set current_name = t.name %}
+                {% set current_description = t.description or '' %}
+                {% include "modals/edit_topic.html" with context %}
+                {% set modal_id = t_delete_modal_id %}
+                {% include "modals/confirm_delete.html" with context %}
+                {% set modal_id = t_move_modal_id %}
+                {% set topic_id = t.id %}
+                {% set current_folder_id = t.folder_id %}
+                {% include "modals/move_topic.html" with context %}
+                {% set modal_id = 'ps-publish-topic-' ~ t.id %}
+                {% include "modals/publish_topic.html" with context %}
+            </div>
             {% endfor %}
         </div>
         {% endif %}
@@ -85,6 +161,9 @@
         <div class="topic-grid">
             {% for f in public_folders %}
             <div class="folder-card topic-card">
+                {% set folder_edit_modal_id = 'ps-edit-folder-' ~ f.id %}
+                {% set folder_delete_modal_id = 'ps-delete-folder-' ~ f.id %}
+                {% set can_edit = true %}
                 <details>
                     <summary class="topic-card-summary">
                         <div class="topic-card-name">&#128193; {{ f.name }}</div>
@@ -95,24 +174,67 @@
                             <span>{{ f.topic_count }} topic{{ '' if f.topic_count == 1 else 's' }}</span>
                             {% if f.child_count %}<span>{{ f.child_count }} sub-folder{{ '' if f.child_count == 1 else 's' }}</span>{% endif %}
                         </div>
+                        <div class="hover-actions" onclick="event.stopPropagation();">
+                            <button type="button" class="icon-btn edit-btn" onclick="openModal('{{ folder_edit_modal_id }}'); event.stopPropagation();" title="Rename" aria-label="Rename">✎</button>
+                            <form method="POST" action="{{ url_for('unpublish_folder', folder_id=f.id) }}" style="display:inline;" onsubmit="event.stopPropagation();">
+                                <button type="submit" class="icon-btn unpublish-btn" onclick="event.stopPropagation();" title="Make private" aria-label="Make private">🔒</button>
+                            </form>
+                            <form method="POST" action="{{ url_for('duplicate_folder', folder_id=f.id) }}" style="display:inline;" onsubmit="event.stopPropagation();">
+                                <button type="submit" class="icon-btn duplicate-btn" onclick="event.stopPropagation();" title="Duplicate" aria-label="Duplicate">⧉</button>
+                            </form>
+                            <button type="button" class="icon-btn delete-btn" onclick="openConfirmModal('{{ folder_delete_modal_id }}', 'Delete Folder', 'Delete &quot;{{ f.name }}&quot; and everything inside it (sub-folders, topics, statements and uploads)?', '{{ url_for('delete_folder', folder_id=f.id) }}'); event.stopPropagation();" title="Delete" aria-label="Delete">🗑</button>
+                        </div>
                     </summary>
                     {% if f.topics %}
                     <div class="folder-contents-inline">
                         {% for t in f.topics %}
-                        <a class="topic-card topic-card-inline" href="{{ url_for('topic', topic_id=t.id) }}">
-                            <div class="topic-card-name">{{ t.name }}{% if t.is_public %} <span class="is-public-badge">Public</span>{% endif %}</div>
-                            <div class="topic-card-desc">{{ t.description or 'No description' }}</div>
-                            <div class="topic-card-meta">
-                                <span class="is-public-badge">Public</span>
-                                {% if t.domain_name %}<span>{{ t.domain_name }}</span>{% endif %}
-                                <span>{{ t.statement_count }} statement{{ '' if t.statement_count == 1 else 's' }}</span>
-                                <span>{{ t.attachment_count }} asset{{ '' if t.attachment_count == 1 else 's' }}</span>
+                        {% set t_edit_modal_id = 'ps-edit-topic-' ~ t.id %}
+                        {% set t_delete_modal_id = 'ps-delete-topic-' ~ t.id %}
+                        {% set t_move_modal_id = 'ps-move-topic-' ~ t.id %}
+                        {% set can_edit = true %}
+                        <div class="topic-card topic-card-inline ps-topic-row">
+                            <div>
+                                <div class="topic-card-name">{{ t.name }}{% if t.is_public %} <span class="is-public-badge">Public</span>{% endif %}</div>
+                                <div class="topic-card-desc">{{ t.description or 'No description' }}</div>
+                                <div class="topic-card-meta">
+                                    <span class="is-public-badge">Public</span>
+                                    {% if t.domain_name %}<span>{{ t.domain_name }}</span>{% endif %}
+                                    <span>{{ t.statement_count }} statement{{ '' if t.statement_count == 1 else 's' }}</span>
+                                    <span>{{ t.attachment_count }} asset{{ '' if t.attachment_count == 1 else 's' }}</span>
+                                </div>
                             </div>
-                        </a>
+                            <div class="hover-actions" onclick="event.stopPropagation();">
+                                <button type="button" class="icon-btn edit-btn" onclick="openModal('{{ t_edit_modal_id }}'); event.stopPropagation();" title="Rename" aria-label="Rename">✎</button>
+                                <button type="button" class="icon-btn move-btn" onclick="openModal('{{ t_move_modal_id }}'); event.stopPropagation();" title="Move to folder" aria-label="Move to folder">⇄</button>
+                                <form method="POST" action="{{ url_for('duplicate_topic', topic_id=t.id) }}" style="display:inline;" onsubmit="event.stopPropagation();">
+                                    <button type="submit" class="icon-btn duplicate-btn" onclick="event.stopPropagation();" title="Duplicate" aria-label="Duplicate">⧉</button>
+                                </form>
+                                <button type="button" class="icon-btn delete-btn" onclick="openConfirmModal('{{ t_delete_modal_id }}', 'Delete Topic', 'Are you sure you want to delete &quot;{{ t.name }}&quot; and all its statements?', '{{ url_for('delete_topic', topic_id=t.id) }}'); event.stopPropagation();" title="Delete" aria-label="Delete">🗑</button>
+                            </div>
+                            {% set modal_id = t_edit_modal_id %}
+                            {% set topic_id = t.id %}
+                            {% set current_name = t.name %}
+                            {% set current_description = t.description or '' %}
+                            {% include "modals/edit_topic.html" with context %}
+                            {% set modal_id = t_delete_modal_id %}
+                            {% include "modals/confirm_delete.html" with context %}
+                            {% set modal_id = t_move_modal_id %}
+                            {% set topic_id = t.id %}
+                            {% set current_folder_id = t.folder_id %}
+                            {% include "modals/move_topic.html" with context %}
+                        </div>
                         {% endfor %}
                     </div>
                     {% endif %}
                 </details>
+                {% set modal_id = folder_edit_modal_id %}
+                {% set folder_id = f.id %}
+                {% set current_name = f.name %}
+                {% set current_description = f.description or '' %}
+                {% set current_is_public = f.is_public %}
+                {% include "modals/edit_folder.html" with context %}
+                {% set modal_id = folder_delete_modal_id %}
+                {% include "modals/confirm_delete.html" with context %}
             </div>
             {% endfor %}
         </div>
@@ -120,16 +242,44 @@
         {% if public_topics %}
         <div class="topic-grid">
             {% for t in public_topics %}
-            <a class="topic-card" href="{{ url_for('topic', topic_id=t.id) }}">
-                <div class="topic-card-name">{{ t.name }}</div>
-                <div class="topic-card-desc">{{ t.description or 'No description' }}</div>
-                <div class="topic-card-meta">
-                    <span class="is-public-badge">Public</span>
-                    {% if t.domain_name %}<span>{{ t.domain_name }}</span>{% endif %}
-                    <span>{{ t.statement_count }} statement{{ '' if t.statement_count == 1 else 's' }}</span>
-                    <span>{{ t.attachment_count }} asset{{ '' if t.attachment_count == 1 else 's' }}</span>
+            {% set t_edit_modal_id = 'ps-edit-topic-' ~ t.id %}
+            {% set t_delete_modal_id = 'ps-delete-topic-' ~ t.id %}
+            {% set t_move_modal_id = 'ps-move-topic-' ~ t.id %}
+            {% set can_edit = true %}
+            <div class="topic-card ps-topic-row">
+                <a class="topic-card-link" href="{{ url_for('topic', topic_id=t.id) }}">
+                    <div class="topic-card-name">{{ t.name }}</div>
+                    <div class="topic-card-desc">{{ t.description or 'No description' }}</div>
+                    <div class="topic-card-meta">
+                        <span class="is-public-badge">Public</span>
+                        {% if t.domain_name %}<span>{{ t.domain_name }}</span>{% endif %}
+                        <span>{{ t.statement_count }} statement{{ '' if t.statement_count == 1 else 's' }}</span>
+                        <span>{{ t.attachment_count }} asset{{ '' if t.attachment_count == 1 else 's' }}</span>
+                    </div>
+                </a>
+                <div class="hover-actions" onclick="event.stopPropagation();">
+                    <button type="button" class="icon-btn edit-btn" onclick="openModal('{{ t_edit_modal_id }}'); event.stopPropagation();" title="Rename" aria-label="Rename">✎</button>
+                    <form method="POST" action="{{ url_for('unpublish_topic', topic_id=t.id) }}" style="display:inline;" onsubmit="event.stopPropagation();">
+                        <button type="submit" class="icon-btn unpublish-btn" onclick="event.stopPropagation();" title="Make private" aria-label="Make private">🔒</button>
+                    </form>
+                    <button type="button" class="icon-btn move-btn" onclick="openModal('{{ t_move_modal_id }}'); event.stopPropagation();" title="Move to folder" aria-label="Move to folder">⇄</button>
+                    <form method="POST" action="{{ url_for('duplicate_topic', topic_id=t.id) }}" style="display:inline;" onsubmit="event.stopPropagation();">
+                        <button type="submit" class="icon-btn duplicate-btn" onclick="event.stopPropagation();" title="Duplicate" aria-label="Duplicate">⧉</button>
+                    </form>
+                    <button type="button" class="icon-btn delete-btn" onclick="openConfirmModal('{{ t_delete_modal_id }}', 'Delete Topic', 'Are you sure you want to delete &quot;{{ t.name }}&quot; and all its statements?', '{{ url_for('delete_topic', topic_id=t.id) }}'); event.stopPropagation();" title="Delete" aria-label="Delete">🗑</button>
                 </div>
-            </a>
+                {% set modal_id = t_edit_modal_id %}
+                {% set topic_id = t.id %}
+                {% set current_name = t.name %}
+                {% set current_description = t.description or '' %}
+                {% include "modals/edit_topic.html" with context %}
+                {% set modal_id = t_delete_modal_id %}
+                {% include "modals/confirm_delete.html" with context %}
+                {% set modal_id = t_move_modal_id %}
+                {% set topic_id = t.id %}
+                {% set current_folder_id = t.folder_id %}
+                {% include "modals/move_topic.html" with context %}
+            </div>
             {% endfor %}
         </div>
         {% else %}
@@ -140,9 +290,12 @@
 
 <style>
 .creation-toolbar { display: flex; gap: 0.75rem; margin-top: 1rem; }
-.topic-card-summary { cursor: pointer; list-style: none; }
+.topic-card-summary { cursor: pointer; list-style: none; position: relative; }
 .topic-card-summary::-webkit-details-marker { display: none; }
 .folder-contents-inline { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
 .topic-card-inline .topic-card-desc { font-size: 0.85rem; }
+.topic-card-link { display: block; text-decoration: none; color: inherit; }
+.ps-topic-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; position: relative; }
+.ps-topic-row .topic-card-link { flex: 1; min-width: 0; }
 </style>
 {% endblock %}

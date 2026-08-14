@@ -11,10 +11,6 @@
         <label for="edit-desc-{{ topic_id }}">Description</label>
         <textarea id="edit-desc-{{ topic_id }}" name="description">{{ current_description }}</textarea>
     </div>
-    <label class="checkbox-row">
-        <input type="checkbox" name="is_public" id="edit-public-{{ topic_id }}" {% if current_is_public %}checked{% endif %}>
-        Make this topic public (visible to anyone without login)
-    </label>
     <div class="form-actions">
         <button type="submit" class="btn-primary">Save Changes</button>
         <button type="button" class="btn-secondary" onclick="closeModal('{{ modal_id }}')">Cancel</button>

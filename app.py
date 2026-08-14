@@ -1189,6 +1189,18 @@ def personal_space():
         ''', (f['id'],)).fetchall()
         f['topics'] = [dict(r) for r in f_topics]
     all_domains_list = [dict(r) for r in conn.execute('SELECT id, name FROM domains ORDER BY name').fetchall()]
+    # Flat, depth-indented folder list (the owner's own folders, private or public)
+    # for the Move-topic <select> on the personal space page.
+    owned_folder_rows = conn.execute(
+        'SELECT * FROM folders WHERE user_id = ? ORDER BY name', (uid,)
+    ).fetchall()
+    ps_folder_tree = build_folder_tree(conn, owned_folder_rows)
+    all_folders_list = []
+    def _walk(nodes, depth):
+        for n in nodes:
+            all_folders_list.append({'id': n['id'], 'name': n['name'], 'depth': depth, 'indent': '\u00a0' * (depth * 4)})
+            _walk(n['children'], depth + 1)
+    _walk(ps_folder_tree, 0)
     conn.close()
     return render_template(
         'personal_space.html',
@@ -1197,6 +1209,7 @@ def personal_space():
         private_folders=private_folders,
         public_folders=public_folders,
         all_domains=all_domains_list,
+        all_folders=all_folders_list,
         asset_kind=asset_kind,
     )
 
@@ -1798,7 +1811,7 @@ def delete_folder(folder_id):
     conn.close()
     for fn in filenames:
         _remove_upload(fn)
-    return redirect(url_for('domain', domain_id=domain_id))
+    return redirect(request.referrer or url_for('all_domains'))
 
 @app.route('/create_statement', methods=['POST'])
 @login_required
@@ -3071,27 +3084,34 @@ def move_topic():
     topic_id = request.form.get('topic_id')
     folder_id = request.form.get('folder_id') or None
     conn = get_db()
-    try:
-        topic = require_topic_owner(conn, topic_id)
-        if not topic:
-            flash('Topic not found')
-            return redirect(request.referrer or url_for('all_domains'))
-        domain_id = topic['domain_id']
-        # Validate the target folder belongs to this domain (topics.folder_id has no
-        # declared FK, so ownership is enforced in app code like create_topic does).
-        if folder_id:
+    topic = require_topic_owner(conn, topic_id)
+    if not topic:
+        flash('Topic not found')
+        return redirect(request.referrer or url_for('all_domains'))
+    # Validate the target folder is one the owner may file into. Inside a domain
+    # the topic stays scoped to that domain; in personal space (domain_id NULL) the
+    # owner may move it into any folder they own, including private ones.
+    if folder_id:
+        if topic['domain_id'] is not None:
             folder = conn.execute(
                 'SELECT id FROM folders WHERE id = ? AND domain_id = ?',
-                (folder_id, domain_id),
+                (folder_id, topic['domain_id']),
             ).fetchone()
             if not folder:
                 flash('Folder not found in this domain')
-                return redirect(url_for('domain', domain_id=domain_id))
-        conn.execute('UPDATE topics SET folder_id = ? WHERE id = ?', (folder_id, topic_id))
-        conn.commit()
-        return redirect(url_for('domain', domain_id=domain_id))
-    finally:
-        conn.close()
+                return redirect(request.referrer or url_for('all_domains'))
+        else:
+            folder = conn.execute(
+                'SELECT id FROM folders WHERE id = ? AND user_id = ?',
+                (folder_id, g.user['id']),
+            ).fetchone()
+            if not folder:
+                flash('Folder not found')
+                return redirect(request.referrer or url_for('all_domains'))
+    conn.execute('UPDATE topics SET folder_id = ? WHERE id = ?', (folder_id, topic_id))
+    conn.commit()
+    conn.close()
+    return redirect(request.referrer or url_for('all_domains'))
 
 
 @app.route('/move_statement/<int:statement_id>', methods=['POST'])
@@ -3210,7 +3230,6 @@ def duplicate_topic(topic_id):
         conn.close()
         flash('Topic not found')
         return redirect(request.referrer or url_for('all_domains'))
-    domain_id = topic['domain_id']
     try:
         _copy_topic(conn, topic)
         conn.commit()
@@ -3218,9 +3237,9 @@ def duplicate_topic(topic_id):
         conn.rollback()
         conn.close()
         flash('Could not duplicate this topic')
-        return redirect(url_for('domain', domain_id=domain_id))
+        return redirect(request.referrer or url_for('all_domains'))
     conn.close()
-    return redirect(url_for('domain', domain_id=domain_id))
+    return redirect(request.referrer or url_for('all_domains'))
 
 
 @app.route('/duplicate_public_topic/<int:topic_id>', methods=['POST'])
@@ -3392,8 +3411,8 @@ def duplicate_folder(folder_id):
         except sqlite3.IntegrityError:
             conn.rollback()
             flash('Could not duplicate this folder')
-            return redirect(url_for('domain', domain_id=domain_id))
-        return redirect(url_for('domain', domain_id=domain_id))
+            return redirect(request.referrer or url_for('all_domains'))
+        return redirect(request.referrer or url_for('all_domains'))
     finally:
         conn.close()
 
@@ -3464,20 +3483,20 @@ def publish_topic(topic_id):
     if not domain:
         conn.close()
         flash('Choose a domain to publish into')
-        return redirect(url_for('topic', topic_id=topic_id))
+        return redirect(request.referrer or url_for('all_domains'))
     # Foldered topics are controlled by their folder: visibility is derived from
     # the parent folder and cannot be set directly. Reject direct publish.
     if topic['folder_id'] is not None:
         conn.close()
         flash('This topic is inside a folder; publish the folder instead')
-        return redirect(url_for('topic', topic_id=topic_id))
+        return redirect(request.referrer or url_for('all_domains'))
     conn.execute(
         'UPDATE topics SET is_public = 1, domain_id = ? WHERE id = ?',
         (domain['id'], topic_id),
     )
     conn.commit()
     conn.close()
-    return redirect(url_for('topic', topic_id=topic_id))
+    return redirect(request.referrer or url_for('all_domains'))
 
 
 @app.route('/unpublish_topic/<int:topic_id>', methods=['POST'])
@@ -3500,11 +3519,11 @@ def unpublish_topic(topic_id):
     if topic['folder_id'] is not None:
         conn.close()
         flash('This topic is inside a folder; unpublish the folder instead')
-        return redirect(url_for('topic', topic_id=topic_id))
+        return redirect(request.referrer or url_for('all_domains'))
     conn.execute('UPDATE topics SET is_public = 0, domain_id = NULL WHERE id = ?', (topic_id,))
     conn.commit()
     conn.close()
-    return redirect(url_for('topic', topic_id=topic_id))
+    return redirect(request.referrer or url_for('all_domains'))
 
 
 def _cascade_folder_visibility(conn, folder_id, is_public, domain_id):
@@ -3563,9 +3582,9 @@ def publish_folder(folder_id):
         conn.rollback()
         conn.close()
         flash('Could not publish this folder')
-        return redirect(url_for('domain', domain_id=folder['domain_id']) if folder['domain_id'] else url_for('personal_space'))
+        return redirect(request.referrer or url_for('personal_space') if folder['domain_id'] is None else url_for('domain', domain_id=folder['domain_id']))
     conn.close()
-    return redirect(url_for('domain', domain_id=domain['id']))
+    return redirect(request.referrer or url_for('personal_space') if domain['id'] is not None else url_for('personal_space'))
 
 
 @app.route('/unpublish_folder/<int:folder_id>', methods=['POST'])
@@ -3585,9 +3604,9 @@ def unpublish_folder(folder_id):
         conn.rollback()
         conn.close()
         flash('Could not unpublish this folder')
-        return redirect(url_for('domain', domain_id=folder['domain_id']) if folder['domain_id'] else url_for('personal_space'))
+        return redirect(request.referrer or url_for('personal_space') if folder['domain_id'] is None else url_for('domain', domain_id=folder['domain_id']))
     conn.close()
-    return redirect(url_for('personal_space'))
+    return redirect(request.referrer or url_for('personal_space'))
 
 
 @app.route('/delete_topic/<int:topic_id>', methods=['POST'])

@@ -30,10 +30,7 @@
             {{ node.statement_count }} Statements &bull; {{ node.attachment_count }} Assets
         </span>
         {% if can_edit %}
-        <span class="folder-actions">
-            <button type="button" class="btn-link" onclick="openModal('{{ add_subfolder_modal_id }}')">+ Sub-folder</button>
-            <button type="button" class="btn-link" onclick="openModal('{{ add_topic_modal_id }}')">+ Topic</button>
-        </span>
+        <span class="folder-actions"></span>
         {% endif %}
     </div>
 
@@ -60,17 +57,6 @@
         {% endif %}
     </div>
     {% endif %}
-
-    {% set modal_id = add_topic_modal_id %}
-    {% set domain_id = domain.id %}
-    {% set current_folder_id = node.id %}
-    {% include "modals/add_topic.html" with context %}
-
-    {% set modal_id = add_subfolder_modal_id %}
-    {% set domain_id = domain.id %}
-    {% set parent_id = node.id %}
-    {% set title = 'New Sub-folder in ' ~ node.name %}
-    {% include "modals/add_folder.html" with context %}
 
     {% set modal_id = folder_edit_modal_id %}
     {% set folder_id = node.id %}
@@ -149,18 +135,6 @@
     </p>
     {% endif %}
 
-    {% set add_folder_modal_id = 'add-folder-' ~ domain.id %}
-    {% set modal_id = add_folder_modal_id %}
-    {% set domain_id = domain.id %}
-    {% set title = 'New Folder in ' ~ domain.name %}
-    {% include "modals/add_folder.html" with context %}
-
-    {% set add_topic_modal_id = 'add-topic-' ~ domain.id %}
-    {% set modal_id = add_topic_modal_id %}
-    {% set domain_id = domain.id %}
-    {% set current_folder_id = '' %}
-    {% include "modals/add_topic.html" with context %}
-
     <div class="grid folders-section">
         {% for node in folder_tree %}
             {{ render_folder(node, 0) }}
@@ -210,28 +184,8 @@
 
         {% if not folder_tree and not loose_topics %}
         <div class="empty-state">
-            <p>No folders or topics yet. Create a folder to start grouping topics, or add a topic directly.</p>
+            <p>Nothing published in this domain yet. Create content in your Personal Space, then publish it here.</p>
         </div>
-        {% endif %}
-
-        {% if logged_in %}
-        <button type="button" class="card card-new" onclick="openModal('{{ add_topic_modal_id }}')"
-                aria-haspopup="dialog" aria-label="Create a new topic in this domain">
-            <span class="card-new-icon" aria-hidden="true">+</span>
-            <span class="card-new-body">
-                <span class="card-new-title">New Topic</span>
-                <span class="card-new-hint">Add a topic to {{ domain.name }}</span>
-            </span>
-        </button>
-
-        <button type="button" class="card card-new" onclick="openModal('{{ add_folder_modal_id }}')"
-                aria-haspopup="dialog" aria-label="Create a new folder in this domain">
-            <span class="card-new-icon" aria-hidden="true">+</span>
-            <span class="card-new-body">
-                <span class="card-new-title">New Folder</span>
-                <span class="card-new-hint">Group topics inside {{ domain.name }}</span>
-            </span>
-        </button>
         {% endif %}
     </div>
 </div>

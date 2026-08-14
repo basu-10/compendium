@@ -1173,6 +1173,22 @@ def personal_space():
     ''', (uid,)).fetchall()
     private_folders = [dict(r) for r in owned_folders if not r['is_public']]
     public_folders = [dict(r) for r in owned_folders if r['is_public']]
+    # Attach each folder's topics so the page can expand a folder inline (private
+    # folders have no /domain/<id> page of their own and must be opened here).
+    for f in private_folders + public_folders:
+        f_topics = conn.execute('''
+            SELECT t.id, t.name, t.description, t.is_public, t.folder_id,
+                   COUNT(DISTINCT s.id) AS statement_count,
+                   COUNT(DISTINCT a.id) AS attachment_count
+            FROM topics t
+            LEFT JOIN statements s ON s.topic_id = t.id
+            LEFT JOIN attachments a ON a.statement_id = s.id
+            WHERE t.folder_id = ?
+            GROUP BY t.id
+            ORDER BY t.created_at DESC
+        ''', (f['id'],)).fetchall()
+        f['topics'] = [dict(r) for r in f_topics]
+    all_domains_list = [dict(r) for r in conn.execute('SELECT id, name FROM domains ORDER BY name').fetchall()]
     conn.close()
     return render_template(
         'personal_space.html',
@@ -1180,6 +1196,7 @@ def personal_space():
         public_topics=public_topics,
         private_folders=private_folders,
         public_folders=public_folders,
+        all_domains=all_domains_list,
         asset_kind=asset_kind,
     )
 
@@ -1595,20 +1612,23 @@ def create_topic():
         is_public = folder['is_public']
         domain_id_for_insert = folder['domain_id']
     else:
-        if not domain_id:
-            flash('Choose a domain to publish this topic into')
-            conn.close()
-            return redirect(request.referrer or url_for('all_domains'))
-        domain = conn.execute('SELECT id FROM domains WHERE id = ?', (domain_id,)).fetchone()
-        if not domain:
-            conn.close()
-            flash('Domain not found')
-            return redirect(url_for('all_domains'))
         is_public = 1 if request.form.get('is_public') else 0
-        # New publish model: a loose topic is private (personal space) on creation,
-        # so it has no domain_id until the owner publishes it, which attaches the
-        # chosen domain_id via the publish_topic route.
-        domain_id_for_insert = domain_id if is_public else None
+        if is_public:
+            # Publishing a loose topic requires a valid domain target.
+            if not domain_id:
+                flash('Choose a domain to publish this topic into')
+                conn.close()
+                return redirect(request.referrer or url_for('all_domains'))
+            domain = conn.execute('SELECT id FROM domains WHERE id = ?', (domain_id,)).fetchone()
+            if not domain:
+                conn.close()
+                flash('Domain not found')
+                return redirect(request.referrer or url_for('all_domains'))
+            domain_id_for_insert = domain['id']
+        else:
+            # A private, loose topic lives only in the owner's personal space and
+            # needs no domain until published later via the publish_topic route.
+            domain_id_for_insert = None
     conn.execute(
         'INSERT INTO topics (domain_id, folder_id, name, description, user_id, is_public, authors) '
         'VALUES (?, ?, ?, ?, ?, ?, ?)',

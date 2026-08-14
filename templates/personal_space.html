@@ -9,22 +9,53 @@
     <header class="section-header">
         <h1>Personal Space</h1>
         <p class="personal-space-sub">Everything you own, regardless of domain. Private topics live here only; published topics are also listed in their domain.</p>
+        <div class="creation-toolbar">
+            <button type="button" class="btn btn-primary" onclick="openModal('ps-add-topic')">+ New Topic</button>
+            <button type="button" class="btn btn-secondary" onclick="openModal('ps-add-folder')">+ New Folder</button>
+        </div>
     </header>
+
+    {% set modal_id = 'ps-add-topic' %}
+    {% set current_folder_id = '' %}
+    {% include "modals/add_topic.html" with context %}
+
+    {% set modal_id = 'ps-add-folder' %}
+    {% set title = 'New Folder' %}
+    {% include "modals/add_folder.html" with context %}
 
     <section class="personal-group">
         <h2 class="personal-group-title">Private <span class="count-badge">{{ private_topics | length + private_folders | length }}</span></h2>
         {% if private_folders %}
         <div class="topic-grid">
             {% for f in private_folders %}
-            <a class="topic-card" href="{{ url_for('domain', domain_id=f.domain_id) if f.domain_id else url_for('personal_space') }}#folder-header-{{ f.id }}">
-                <div class="topic-card-name">&#128193; {{ f.name }}</div>
-                <div class="topic-card-desc">{{ f.description or 'No description' }}</div>
-                <div class="topic-card-meta">
-                    <span class="is-private-badge">Folder · Private</span>
-                    <span>{{ f.topic_count }} topic{{ '' if f.topic_count == 1 else 's' }}</span>
-                    {% if f.child_count %}<span>{{ f.child_count }} sub-folder{{ '' if f.child_count == 1 else 's' }}</span>{% endif %}
-                </div>
-            </a>
+            <div class="folder-card topic-card">
+                <details>
+                    <summary class="topic-card-summary">
+                        <div class="topic-card-name">&#128193; {{ f.name }}</div>
+                        <div class="topic-card-desc">{{ f.description or 'No description' }}</div>
+                        <div class="topic-card-meta">
+                            <span class="is-private-badge">Folder · Private</span>
+                            <span>{{ f.topic_count }} topic{{ '' if f.topic_count == 1 else 's' }}</span>
+                            {% if f.child_count %}<span>{{ f.child_count }} sub-folder{{ '' if f.child_count == 1 else 's' }}</span>{% endif %}
+                        </div>
+                    </summary>
+                    {% if f.topics %}
+                    <div class="folder-contents-inline">
+                        {% for t in f.topics %}
+                        <a class="topic-card topic-card-inline" href="{{ url_for('topic', topic_id=t.id) }}">
+                            <div class="topic-card-name">{{ t.name }}</div>
+                            <div class="topic-card-desc">{{ t.description or 'No description' }}</div>
+                            <div class="topic-card-meta">
+                                <span class="is-private-badge">Private</span>
+                                <span>{{ t.statement_count }} statement{{ '' if t.statement_count == 1 else 's' }}</span>
+                                <span>{{ t.attachment_count }} asset{{ '' if t.attachment_count == 1 else 's' }}</span>
+                            </div>
+                        </a>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </details>
+            </div>
             {% endfor %}
         </div>
         {% endif %}
@@ -44,7 +75,7 @@
         </div>
         {% endif %}
         {% if not private_folders and not private_topics %}
-        <p class="empty-state">No private content yet. Create one from any domain, or duplicate a public topic to make it yours.</p>
+        <p class="empty-state">No private content yet. Use “+ New Topic” or “+ New Folder” above to create something.</p>
         {% endif %}
     </section>
 
@@ -53,16 +84,36 @@
         {% if public_folders %}
         <div class="topic-grid">
             {% for f in public_folders %}
-            <a class="topic-card" href="{{ url_for('domain', domain_id=f.domain_id) }}#folder-header-{{ f.id }}">
-                <div class="topic-card-name">&#128193; {{ f.name }}</div>
-                <div class="topic-card-desc">{{ f.description or 'No description' }}</div>
-                <div class="topic-card-meta">
-                    <span class="is-public-badge">Folder · Public</span>
-                    {% if f.domain_name %}<span>{{ f.domain_name }}</span>{% endif %}
-                    <span>{{ f.topic_count }} topic{{ '' if f.topic_count == 1 else 's' }}</span>
-                    {% if f.child_count %}<span>{{ f.child_count }} sub-folder{{ '' if f.child_count == 1 else 's' }}</span>{% endif %}
-                </div>
-            </a>
+            <div class="folder-card topic-card">
+                <details>
+                    <summary class="topic-card-summary">
+                        <div class="topic-card-name">&#128193; {{ f.name }}</div>
+                        <div class="topic-card-desc">{{ f.description or 'No description' }}</div>
+                        <div class="topic-card-meta">
+                            <span class="is-public-badge">Folder · Public</span>
+                            {% if f.domain_name %}<span>{{ f.domain_name }}</span>{% endif %}
+                            <span>{{ f.topic_count }} topic{{ '' if f.topic_count == 1 else 's' }}</span>
+                            {% if f.child_count %}<span>{{ f.child_count }} sub-folder{{ '' if f.child_count == 1 else 's' }}</span>{% endif %}
+                        </div>
+                    </summary>
+                    {% if f.topics %}
+                    <div class="folder-contents-inline">
+                        {% for t in f.topics %}
+                        <a class="topic-card topic-card-inline" href="{{ url_for('topic', topic_id=t.id) }}">
+                            <div class="topic-card-name">{{ t.name }}{% if t.is_public %} <span class="is-public-badge">Public</span>{% endif %}</div>
+                            <div class="topic-card-desc">{{ t.description or 'No description' }}</div>
+                            <div class="topic-card-meta">
+                                <span class="is-public-badge">Public</span>
+                                {% if t.domain_name %}<span>{{ t.domain_name }}</span>{% endif %}
+                                <span>{{ t.statement_count }} statement{{ '' if t.statement_count == 1 else 's' }}</span>
+                                <span>{{ t.attachment_count }} asset{{ '' if t.attachment_count == 1 else 's' }}</span>
+                            </div>
+                        </a>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </details>
+            </div>
             {% endfor %}
         </div>
         {% endif %}
@@ -86,4 +137,12 @@
         {% endif %}
     </section>
 </div>
+
+<style>
+.creation-toolbar { display: flex; gap: 0.75rem; margin-top: 1rem; }
+.topic-card-summary { cursor: pointer; list-style: none; }
+.topic-card-summary::-webkit-details-marker { display: none; }
+.folder-contents-inline { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.topic-card-inline .topic-card-desc { font-size: 0.85rem; }
+</style>
 {% endblock %}

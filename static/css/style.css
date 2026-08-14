@@ -2469,12 +2469,21 @@ p {
 
 .download-modal {
     max-width: 32rem;
+    padding: 1.5rem;
+    box-sizing: border-box;
+}
+
+.download-modal h3 {
+    margin: 0 0 0.5rem;
+    font-size: var(--fs-modal-title, 1.15rem);
+    font-weight: 600;
+    color: var(--text-primary);
 }
 
 .download-modal p {
     color: var(--text-secondary);
     font-size: 0.9rem;
-    margin: 0.25rem 0 0.9rem;
+    margin: 0 0 0.9rem;
 }
 
 .download-modal code {
@@ -2506,6 +2515,11 @@ p {
 .download-tree .dt-note {
     color: var(--text-muted, #94a3b8);
     font-style: italic;
+}
+
+.download-modal .confirm-actions {
+    justify-content: flex-start;
+    margin-top: 0;
 }
 
 .topic-title-group {

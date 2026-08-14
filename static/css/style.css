@@ -4562,6 +4562,60 @@ body.theme-modern { --plyr-color-main: #4f46e5; }
     color: var(--accent);
 }
 
+/* Owner publish/unpublish controls and the public duplicate button. */
+.owner-publish-bar,
+.public-attrib + form {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
+}
+.owner-publish-bar select {
+    padding: 0.35rem 0.5rem;
+    border-radius: 6px;
+    border: 1px solid var(--border, #ccc);
+    background: var(--bg, #fff);
+    color: var(--text-primary);
+}
+.btn {
+    display: inline-block;
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+}
+.btn-primary {
+    background-color: var(--accent, #2563eb);
+    color: #fff;
+}
+.btn-secondary {
+    background-color: transparent;
+    border-color: var(--border, #ccc);
+    color: var(--text-primary);
+}
+
+/* Author lineage strip shown on every topic (owner and visitors). */
+.authors-strip {
+    margin-top: 0.6rem;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+.authors-label {
+    font-weight: 600;
+    margin-right: 0.25rem;
+}
+.author-chip {
+    color: var(--accent, #2563eb);
+    text-decoration: none;
+}
+.author-chip:hover {
+    text-decoration: underline;
+}
+
 /* Badge shown on public topics/folders (owner view) */
 .is-public-badge {
     display: inline-block;

@@ -47,10 +47,44 @@
         {% if can_edit %}{% include "components/hover_actions.html" with context %}{% endif %}
     </div>
 
-    {% if not can_edit %}
+    {% if can_edit %}
+    {# Owner controls: publish/unpublish. Publishing attaches the topic to a
+       domain the owner picks; unpublishing detaches it back to personal space. #}
+    <div class="owner-publish-bar">
+        {% if topic.is_public %}
+        <span class="public-attrib public-attrib-owner">Public &middot; visible to everyone</span>
+        <form method="POST" action="{{ url_for('unpublish_topic', topic_id=topic.id) }}" style="display:inline;">
+            <button type="submit" class="btn btn-secondary">Unpublish</button>
+        </form>
+        {% else %}
+        <span class="public-attrib">Private &middot; personal space only</span>
+        <form method="POST" action="{{ url_for('publish_topic', topic_id=topic.id) }}" style="display:inline;">
+            <select name="domain_id" required aria-label="Domain to publish into">
+                <option value="">Publish into domain…</option>
+                {% for d in all_domains %}
+                <option value="{{ d.id }}">{{ d.name }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-primary">Publish</button>
+        </form>
+        {% endif %}
+    </div>
+    {% elif topic.is_public and logged_in %}
     <div class="public-attrib">Public topic &middot; by <strong>{{ owner_username }}</strong></div>
-    {% elif topic.is_public %}
-    <div class="public-attrib public-attrib-owner">Public &middot; visible to everyone</div>
+    <form method="POST" action="{{ url_for('duplicate_public_topic', topic_id=topic.id) }}" style="display:inline;">
+        <button type="submit" class="btn btn-primary">Duplicate to my space</button>
+    </form>
+    {% elif not can_edit %}
+    <div class="public-attrib">Public topic &middot; by <strong>{{ owner_username }}</strong></div>
+    {% endif %}
+
+    {% if topic_authors %}
+    <div class="authors-strip">
+        <span class="authors-label">Authors:</span>
+        {% for a in topic_authors %}
+        <a href="{{ url_for('user_public', username=a.username) }}" class="author-chip">{{ a.username }}</a>{% if not loop.last %}, {% endif %}
+        {% endfor %}
+    </div>
     {% endif %}
 
     <div class="topic-intro" id="topic-intro">

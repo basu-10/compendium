@@ -87,14 +87,41 @@ schema migrations and seeds three example domains.
 
 ## Data Model
 
-- **domains** — top-level categories (`name`, `description`).
+- **domains** — top-level categories (`name`, `description`). Shared, owner-less. A topic
+  is attached to a domain **only while published** (see publish model below).
 - **folders** — belong to a domain (`name`, `description`, `parent_id`); form a tree inside
   a domain. A topic may sit directly under a domain or under a folder.
-- **topics** — belong to a domain (`name`, `description`, `created_at`); optionally linked
-  to a folder via `folder_id`.
+- **topics** — `name`, `description`, `created_at`, `user_id` (owner), `is_public`,
+  `folder_id`, and `authors` (JSON array of user ids recording the owner lineage across
+  duplicates). `domain_id` is **nullable**: NULL while private (personal space only), set to
+  the chosen domain while published (`is_public = 1`).
 - **statements** — belong to a topic (`text`, `created_at`).
 - **attachments** — belong to a statement (`title`, `type`, `content`, `filename`); the
   `type` column is constrained to the supported asset types.
+
+### Publish model
+
+A topic is **private** (`is_public = 0`, `domain_id = NULL`) on creation — it lives only in
+the owner's personal space. The owner **publishes** it by attaching a domain: `is_public = 1`
+and `domain_id = <chosen domain>`. The same row is then visible to everyone (logged in or
+out) and is edited live — there is no copy/clone on publish, and nothing is hidden during
+editing. **Unpublishing** sets `is_public = 0` and `domain_id = NULL`, returning the topic to
+personal space.
+
+Any logged-in, non-owning visitor of a public topic may **Duplicate** it. Duplicate creates a
+brand-new private topic owned by the duplicating user (`user_id = duplicator`, `domain_id =
+NULL`, `is_public = 0`), carrying forward the source's full `authors` list with the duplicator
+appended at the end. The append is de-duplicated: if the last author id already equals the
+duplicator, nothing is appended (an owner re-duplicating their own public topic does not
+repeat the tail entry). The source row is never modified. Owners see the full edit/delete/
+duplicate/move toolbar on their own topics; non-owners see only Duplicate.
+
+### Migration (existing data)
+
+On startup `init_db()` migrates legacy data to the publish model: `topics.domain_id` is made
+nullable, and every private topic (`is_public = 0`) has its `domain_id` stripped (moved to
+personal space); public topics keep their domain. `authors` is added and backfilled with the
+topic's owner id. Idempotent, so re-running is safe.
 
 Deleting a domain, topic, or statement cascades to its children and removes any
 referenced upload files from disk.

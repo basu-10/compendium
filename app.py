@@ -305,6 +305,37 @@ def owner_username(conn, user_id):
     return row['username'] if row else 'unknown'
 
 
+def parse_authors(raw):
+    """Parse the topics.authors JSON column into a list of int user ids.
+
+    Returns [] for NULL/empty/invalid so callers never have to guard parsing.
+    """
+    if not raw:
+        return []
+    try:
+        return [int(x) for x in json.loads(raw)]
+    except (ValueError, TypeError):
+        return []
+
+
+def authors_to_str(ids):
+    """Serialize a list of author ids back to the JSON column form."""
+    return json.dumps([int(x) for x in ids])
+
+
+def append_author(raw, user_id):
+    """Return the authors list with `user_id` appended, applying the de-dup rule.
+
+    The rule: if the last id already equals `user_id`, the list is returned
+    unchanged. This prevents an owner who re-duplicates their own public topic
+    from accumulating repeated tail entries. Used by duplicate_public_topic.
+    """
+    ids = parse_authors(raw)
+    if not ids or ids[-1] != int(user_id):
+        ids.append(int(user_id))
+    return ids
+
+
 # Random credential generation for the signup page. Kept server-side so the
 # browser never derives secrets from the client clock / Math.random.
 def generate_username():
@@ -422,7 +453,7 @@ def init_db():
         
         CREATE TABLE IF NOT EXISTS topics (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            domain_id INTEGER NOT NULL,
+            domain_id INTEGER,
             name TEXT NOT NULL,
             description TEXT,
             is_public INTEGER NOT NULL DEFAULT 0,
@@ -485,6 +516,12 @@ def init_db():
     _ensure_column(conn, cursor, 'folders', 'user_id', 'INTEGER')
     _ensure_column(conn, cursor, 'topics', 'is_public', 'INTEGER DEFAULT 0')
     _ensure_column(conn, cursor, 'folders', 'is_public', 'INTEGER DEFAULT 0')
+    # Author lineage: a JSON array of user ids recording every owner of a topic
+    # across duplicates. The creating owner is first; each duplicate appends the
+    # duplicating user (de-duped so an owner re-duplicating their own public topic
+    # does not create a repeated tail entry). Stored as TEXT (JSON) so it can hold
+    # a list of values without a join table.
+    _ensure_column(conn, cursor, 'topics', 'authors', 'TEXT')
     _backfill_positions(conn, cursor, 'statements', 'topic_id')
     _backfill_positions(conn, cursor, 'attachments', 'statement_id')
 
@@ -493,6 +530,30 @@ def init_db():
     # integrity is enforced in app code (see create_topic/update_topic) and the
     # column is nullable so a topic may sit directly under a domain if needed.
     _ensure_column(conn, cursor, 'topics', 'folder_id', 'INTEGER')
+
+    # New publish model requires topics.domain_id to be nullable (private topics
+    # have no domain). Rebuild topics to drop the legacy NOT NULL before any
+    # migration nulls the column. Must run before the author/domain backfills.
+    _migrate_topics_domain_nullable(conn, cursor)
+
+    # New publish model migration: now that domain_id is nullable, strip the
+    # domain from every legacy private topic so it lives in the owner's personal
+    # space only. Public topics keep their domain_id (already correct). This is a
+    # no-op on a fresh DB or after the first run.
+    cursor.execute(
+        'UPDATE topics SET domain_id = NULL '
+        'WHERE is_public = 0 AND domain_id IS NOT NULL'
+    )
+    # Backfill authors for any topic missing the value: seed it with the topic's
+    # owner id (every topic has a user_id). Guarded by the WHERE so re-runs are
+    # no-ops.
+    for row in cursor.execute(
+        'SELECT id, user_id FROM topics '
+        'WHERE authors IS NULL OR authors = \'\' OR authors = \'[]\''
+    ).fetchall():
+        uid = row['user_id']
+        seed = json.dumps([uid]) if uid is not None else json.dumps([])
+        cursor.execute('UPDATE topics SET authors = ? WHERE id = ?', (seed, row['id']))
 
     # Remove the legacy per-domain owner column; domains are shared categories.
     _drop_domains_user_id(conn, cursor)
@@ -739,6 +800,59 @@ def _migrate_domains(conn, cursor):
                 (target_id, source_id),
             )
             cursor.execute("DELETE FROM domains WHERE id = ?", (source_id,))
+
+
+def _migrate_topics_domain_nullable(conn, cursor):
+    """Make `topics.domain_id` nullable so private topics can leave all domains.
+
+    New publish model: a topic only carries a domain_id while published
+    (is_public=1); private topics have domain_id NULL. The original schema
+    declared domain_id NOT NULL, so rebuild the table (the same guarded rebuild
+    pattern as the other migrations) to drop the NOT NULL, copying every row.
+    Runs exactly once, guarded by a PRAGMA type check.
+    """
+    cursor.execute("PRAGMA table_info(topics)")
+    col = next((r for r in cursor.fetchall() if r['name'] == 'domain_id'), None)
+    if col is None or col['notnull'] == 0:
+        return
+    conn.commit()
+    prior_isolation = conn.isolation_level
+    conn.isolation_level = None
+    cursor.execute('PRAGMA foreign_keys = OFF')
+    try:
+        cursor.execute('BEGIN IMMEDIATE')
+        try:
+            cursor.execute('DROP TABLE IF EXISTS topics_new')
+            # New shape includes folder_id/user_id/authors so the later index and
+            # _ensure_column steps still find them; only domain_id loses NOT NULL.
+            cursor.execute('''CREATE TABLE topics_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                domain_id INTEGER,
+                name TEXT NOT NULL,
+                description TEXT,
+                is_public INTEGER NOT NULL DEFAULT 0,
+                folder_id INTEGER,
+                user_id INTEGER,
+                authors TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (domain_id) REFERENCES domains (id)
+            )''')
+            cursor.execute('''
+                INSERT INTO topics_new (id, domain_id, name, description, is_public, folder_id, user_id, authors, created_at)
+                SELECT id, domain_id, name, description, is_public, folder_id, user_id, authors, created_at FROM topics
+            ''')
+            cursor.execute('DROP TABLE topics')
+            cursor.execute('ALTER TABLE topics_new RENAME TO topics')
+            violations = cursor.execute("PRAGMA foreign_key_check('topics')").fetchall()
+            if violations:
+                raise sqlite3.IntegrityError(f'foreign key violations after topics rebuild: {violations}')
+            cursor.execute('COMMIT')
+        except Exception:
+            cursor.execute('ROLLBACK')
+            raise
+    finally:
+        cursor.execute('PRAGMA foreign_keys = ON')
+        conn.isolation_level = prior_isolation
 
 
 def _drop_domains_user_id(conn, cursor):
@@ -1236,6 +1350,20 @@ def topic(topic_id):
         ]
         for sid, atts in attachments_by_statement.items()
     }
+    # Author lineage: resolve the topic's stored author id list into user rows,
+    # preserving order, so the template can render an "Authors" strip. Computed
+    # here while the connection is still open.
+    author_ids = parse_authors(topic['authors']) if topic else []
+    topic_authors = []
+    if topic:
+        for aid in author_ids:
+            u = conn.execute(
+                'SELECT id, username FROM users WHERE id = ?', (aid,)
+            ).fetchone()
+            if u:
+                topic_authors.append({'id': u['id'], 'username': u['username']})
+    # All domains, for the owner's publish-domain <select>.
+    all_domains_list = [dict(r) for r in conn.execute('SELECT id, name FROM domains ORDER BY name').fetchall()]
     conn.close()
     if not topic:
         flash('Topic not found')
@@ -1243,6 +1371,7 @@ def topic(topic_id):
     return render_template(
         'topic.html',
         topic=topic,
+        all_domains=all_domains_list,
         folder_path=folder_path,
         all_folders=all_folders,
         domain_topics=domain_topics,
@@ -1257,6 +1386,7 @@ def topic(topic_id):
         active_statement_id=active_statement_id,
         can_edit=can_edit,
         owner_username=owner_name,
+        topic_authors=topic_authors,
     )
 
 @app.route('/create_topic', methods=['POST'])
@@ -1287,9 +1417,15 @@ def create_topic():
         if not folder:
             folder_id = None
     is_public = 1 if request.form.get('is_public') else 0
+    # New publish model: a topic is private (personal space) on creation, so it
+    # has no domain_id until the owner publishes it. Publishing is an explicit
+    # action via the publish_topic route, which attaches the chosen domain_id.
+    domain_id_for_insert = domain_id if is_public else None
     conn.execute(
-        'INSERT INTO topics (domain_id, folder_id, name, description, user_id, is_public) VALUES (?, ?, ?, ?, ?, ?)',
-        (domain_id, folder_id, name, description, g.user['id'], is_public),
+        'INSERT INTO topics (domain_id, folder_id, name, description, user_id, is_public, authors) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?)',
+        (domain_id_for_insert, folder_id, name, description, g.user['id'], is_public,
+         authors_to_str([g.user['id']])),
     )
     conn.commit()
     topic_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
@@ -2658,14 +2794,18 @@ def _copy_topic(conn, src_topic, new_folder_id=None):
     """Deep-copy `src_topic` (statements + attachments + files) into `new_folder_id`.
 
     If `new_folder_id` is None the copy keeps the original's folder_id (used by
-    duplicate_topic). Returns the new topic id.
+    duplicate_topic). The copy inherits the source's author lineage and user_id;
+    callers that reassign ownership (e.g. duplicate_public_topic) override those
+    columns after the copy returns. Returns the new topic id.
     """
     folder_id = src_topic['folder_id'] if new_folder_id is None else new_folder_id
+    src_authors = src_topic['authors'] if 'authors' in src_topic.keys() else None
     cursor = conn.execute(
-        "INSERT INTO topics (domain_id, folder_id, name, description, user_id, created_at) "
-        "VALUES (?, ?, 'Copy of ' || ?, ?, ?, ?)",
+        "INSERT INTO topics (domain_id, folder_id, name, description, user_id, created_at, authors) "
+        "VALUES (?, ?, 'Copy of ' || ?, ?, ?, ?, ?)",
         (src_topic['domain_id'], folder_id, src_topic['name'],
-         src_topic['description'], src_topic['user_id'], src_topic['created_at']),
+         src_topic['description'], src_topic['user_id'], src_topic['created_at'],
+         src_authors),
     )
     new_topic_id = cursor.lastrowid
     src_statements = conn.execute(
@@ -2845,6 +2985,46 @@ def duplicate_topic(topic_id):
     return redirect(url_for('domain', domain_id=domain_id))
 
 
+@app.route('/duplicate_public_topic/<int:topic_id>', methods=['POST'])
+@login_required
+def duplicate_public_topic(topic_id):
+    """Copy a *public* topic into the current user's personal space.
+
+    This is the only duplicate path available to non-owners: it requires the
+    source to be published (is_public=1) and does NOT require ownership of the
+    source. The new topic is owned by the duplicating user, private (domain_id
+    NULL, is_public=0), and carries forward the source's full author lineage with
+    the duplicator appended at the end (de-duped: an owner re-duplicating their
+    own public topic does not repeat the tail id). The source row is never
+    modified.
+    """
+    uid = g.user['id']
+    conn = get_db()
+    src = conn.execute('SELECT * FROM topics WHERE id = ?', (topic_id,)).fetchone()
+    if not src or src['is_public'] != 1:
+        conn.close()
+        flash('This topic is not available to copy')
+        return redirect(request.referrer or url_for('all_domains'))
+    try:
+        # Deep-copy the whole tree; _copy_topic preserves the source folder_id
+        # and authors, both of which we override below for the new owner.
+        new_topic_id = _copy_topic(conn, src)
+        new_authors = append_author(src['authors'], uid)
+        conn.execute(
+            'UPDATE topics SET user_id = ?, is_public = 0, domain_id = NULL, authors = ? '
+            'WHERE id = ?',
+            (uid, authors_to_str(new_authors), new_topic_id),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        flash('Could not duplicate this topic')
+        return redirect(url_for('topic', topic_id=topic_id))
+    conn.close()
+    return redirect(url_for('topic', topic_id=new_topic_id))
+
+
 @app.route('/duplicate_statement/<int:statement_id>', methods=['POST'])
 @login_required
 def duplicate_statement(statement_id):
@@ -2979,10 +3159,77 @@ def update_topic():
         conn.close()
         flash('Topic not found')
         return redirect(request.referrer or url_for('all_domains'))
-    conn.execute('UPDATE topics SET name = ?, description = ?, is_public = ? WHERE id = ?', (name, description, is_public, topic_id))
+    # New publish model: a topic keeps its domain_id only while public. Toggling
+    # public off via the edit modal strips the domain (returns to personal space);
+    # toggling on without an explicit publish re-attaches the prior domain if it
+    # still exists, otherwise the owner must use the publish action to pick one.
+    if is_public:
+        domain_id = topic['domain_id']
+        if domain_id is not None:
+            dom = conn.execute('SELECT id FROM domains WHERE id = ?', (domain_id,)).fetchone()
+            if not dom:
+                domain_id = None
+    else:
+        domain_id = None
+    conn.execute(
+        'UPDATE topics SET name = ?, description = ?, is_public = ?, domain_id = ? WHERE id = ?',
+        (name, description, is_public, domain_id, topic_id),
+    )
     conn.commit()
     conn.close()
     return redirect(request.referrer or url_for('all_domains'))
+
+@app.route('/publish_topic/<int:topic_id>', methods=['POST'])
+@login_required
+def publish_topic(topic_id):
+    """Attach a topic to a domain and make it public.
+
+    The new publish model: a topic only has a domain_id while published. The
+    owner picks which domain to publish into; on publish we set is_public=1 and
+    domain_id=<chosen>. The same row is edited live thereafter — visitors read
+    the identical object, so no copy/clone is made.
+    """
+    domain_id = request.form.get('domain_id')
+    conn = get_db()
+    topic = conn.execute('SELECT t.* FROM topics t WHERE t.id = ?', (topic_id,)).fetchone()
+    if not topic or topic['user_id'] != g.user['id']:
+        conn.close()
+        flash('Topic not found')
+        return redirect(request.referrer or url_for('all_domains'))
+    domain = conn.execute('SELECT id FROM domains WHERE id = ?', (domain_id,)).fetchone() if domain_id else None
+    if not domain:
+        conn.close()
+        flash('Choose a domain to publish into')
+        return redirect(url_for('topic', topic_id=topic_id))
+    conn.execute(
+        'UPDATE topics SET is_public = 1, domain_id = ? WHERE id = ?',
+        (domain['id'], topic_id),
+    )
+    conn.commit()
+    conn.close()
+    return redirect(url_for('topic', topic_id=topic_id))
+
+
+@app.route('/unpublish_topic/<int:topic_id>', methods=['POST'])
+@login_required
+def unpublish_topic(topic_id):
+    """Make a topic private again and detach it from its domain.
+
+    Symmetric to publish_topic: is_public=0 and domain_id=NULL, so the topic
+    leaves every domain listing and returns to the owner's personal space. The
+    same row is retained (no deletion, no clone).
+    """
+    conn = get_db()
+    topic = conn.execute('SELECT t.* FROM topics t WHERE t.id = ?', (topic_id,)).fetchone()
+    if not topic or topic['user_id'] != g.user['id']:
+        conn.close()
+        flash('Topic not found')
+        return redirect(request.referrer or url_for('all_domains'))
+    conn.execute('UPDATE topics SET is_public = 0, domain_id = NULL WHERE id = ?', (topic_id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('topic', topic_id=topic_id))
+
 
 @app.route('/delete_topic/<int:topic_id>', methods=['POST'])
 @login_required
@@ -3169,7 +3416,7 @@ def _account_export_rows(conn, uid):
         'FROM folders WHERE user_id = ? ORDER BY id', (uid,)).fetchall()]
     topics = [dict(r) for r in conn.execute('''
         SELECT t.id, t.domain_id, t.folder_id, t.name, t.description,
-               t.is_public, t.created_at
+               t.is_public, t.created_at, t.authors
         FROM topics t WHERE t.user_id = ? ORDER BY t.id
     ''', (uid,)).fetchall()]
     statements = [dict(r) for r in conn.execute('''
@@ -3330,8 +3577,8 @@ def account_import():
                 continue
             folder_old = t.get('folder_id')
             cursor.execute('''
-                INSERT INTO topics (domain_id, folder_id, name, description, is_public, user_id)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO topics (domain_id, folder_id, name, description, is_public, user_id, authors)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (
                 domain_id,
                 folder_id_map.get(folder_old) if folder_old is not None else None,
@@ -3339,6 +3586,7 @@ def account_import():
                 t.get('description') or '',
                 1 if t.get('is_public') else 0,
                 uid,
+                t.get('authors') or authors_to_str([uid]),
             ))
             topic_id_map[t['id']] = cursor.lastrowid
 

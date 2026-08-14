@@ -291,27 +291,7 @@
 .topic-card-link { display: block; text-decoration: none; color: inherit; }
 .ps-topic-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; position: relative; }
 .ps-topic-row .topic-card-link { flex: 1; min-width: 0; }
-/* Keep card text clear of the overlaid hover toolbar so it reflows rather than
-   sliding underneath the buttons. */
-.topic-card .topic-card-name,
-.topic-card .topic-card-desc,
-.topic-card .topic-card-meta,
-.topic-card-summary .topic-card-name,
-.topic-card-summary .topic-card-desc,
-.topic-card-summary .topic-card-meta,
-.ps-topic-row .topic-card-name,
-.ps-topic-row .topic-card-desc,
-.ps-topic-row .topic-card-meta { padding-right: 11rem; }
-@media (max-width: 640px) {
-    .topic-card .topic-card-name,
-    .topic-card .topic-card-desc,
-    .topic-card .topic-card-meta,
-    .topic-card-summary .topic-card-name,
-    .topic-card-summary .topic-card-desc,
-    .topic-card-summary .topic-card-meta,
-    .ps-topic-row .topic-card-name,
-    .ps-topic-row .topic-card-desc,
-    .ps-topic-row .topic-card-meta { padding-right: 0; }
-}
+/* Toolbar is positioned absolutely so it overlays the top-right; no extra
+   padding needed and text keeps its natural flow and card height. */
 </style>
 {% endblock %}

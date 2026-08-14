@@ -4842,11 +4842,7 @@ body.theme-modern { --plyr-color-main: #4f46e5; }
     justify-content: flex-end;
     max-width: 70%;
 }
-/* Leave clearance so the padded card text never runs under the toolbar. */
-.topic-card,
-.topic-card-summary {
-    padding-right: 1rem;
-}
+
 .topic-card-name {
     font-weight: 600;
     font-size: 1rem;

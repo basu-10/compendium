@@ -29,21 +29,61 @@ const COMPENDIUM_EDITORS = (function () {
         ckeditorInstances = [];
     }
 
-    // Insert an image File/Blob into the editor as a Base64 data URL so it works
-    // without any server-side upload endpoint.
-    function insertImageFile(editor, file) {
+    // Insert an image File/Blob into the editor by uploading it to the server
+    // and inserting an <img src="/uploads/..."> reference. This avoids huge
+    // Base64 strings in the database and request body.
+    async function insertImageFile(editor, file) {
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = function () {
-            const base64 = reader.result;
-            if (!base64) return;
-            editor.model.change(function (writer) {
-                // Create a proper imageBlock element with the src attribute
-                const image = writer.createElement('imageBlock', { src: base64 });
-                editor.model.insertContent(image);
+
+        // Show a temporary placeholder while uploading
+        const placeholderSrc = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+        editor.model.change(function (writer) {
+            const image = writer.createElement('imageBlock', { src: placeholderSrc });
+            editor.model.insertContent(image);
+        });
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const response = await fetch('/upload_richtext_image', {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin'
             });
-        };
-        reader.readAsDataURL(file);
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Upload failed');
+
+            // Replace placeholder with actual image URL
+            editor.model.change(function (writer) {
+                const selection = editor.model.document.selection;
+                const range = selection.getFirstRange();
+                if (!range) return;
+
+                // Find the image element at the selection
+                for (const value of range.getItems()) {
+                    if (value.is('element', 'imageBlock')) {
+                        writer.setAttribute('src', data.url, value);
+                        break;
+                    }
+                }
+            });
+        } catch (err) {
+            console.error('Image upload failed:', err);
+            // On failure, remove the placeholder
+            editor.model.change(function (writer) {
+                const selection = editor.model.document.selection;
+                const range = selection.getFirstRange();
+                if (!range) return;
+                for (const value of range.getItems()) {
+                    if (value.is('element', 'imageBlock')) {
+                        writer.remove(value);
+                        break;
+                    }
+                }
+            });
+            alert('Failed to upload image: ' + err.message);
+        }
     }
 
     // Read an image from the Async Clipboard API. Some OS/clipboard managers only
@@ -57,7 +97,11 @@ const COMPENDIUM_EDITORS = (function () {
             });
             if (type) {
                 const blob = await item.getType(type);
-                if (blob) return blob;
+                if (blob) {
+                    // Wrap blob in a File so it has a proper name for the server
+                    const ext = type.split('/')[1] || 'png';
+                    return new File([blob], `clipboard-image.${ext}`, { type: blob.type });
+                }
             }
         }
         return null;

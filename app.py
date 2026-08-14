@@ -2228,6 +2228,28 @@ def upload_drop(statement_id):
     conn.close()
     return {'results': results}
 
+@app.route('/upload_richtext_image', methods=['POST'])
+@login_required
+def upload_richtext_image():
+    """Upload an image for embedding in richtext content.
+    Returns the image URL that can be used in an <img src="..."> tag.
+    """
+    file = request.files.get('file')
+    if not file or not file.filename:
+        return {'error': 'No file provided'}, 400
+
+    # Validate it's an image
+    ext = _upload_extension('image', file.filename)
+    if ext is None:
+        return {'error': 'Unsupported image type'}, 400
+
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file.save(filepath)
+
+    return {'url': url_for('uploaded_file', filename=filename)}
+
 @app.route('/update_statement', methods=['POST'])
 @login_required
 def update_statement():

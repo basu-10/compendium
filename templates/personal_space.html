@@ -16,7 +16,7 @@
         {% if private_folders %}
         <div class="topic-grid">
             {% for f in private_folders %}
-            <a class="topic-card" href="{{ url_for('domain', domain_id=f.domain_id) if f.domain_id else url_for('personal') }}#folder-header-{{ f.id }}">
+            <a class="topic-card" href="{{ url_for('domain', domain_id=f.domain_id) if f.domain_id else url_for('personal_space') }}#folder-header-{{ f.id }}">
                 <div class="topic-card-name">&#128193; {{ f.name }}</div>
                 <div class="topic-card-desc">{{ f.description or 'No description' }}</div>
                 <div class="topic-card-meta">

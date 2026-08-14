@@ -37,11 +37,10 @@ const COMPENDIUM_EDITORS = (function () {
         reader.onload = function () {
             const base64 = reader.result;
             if (!base64) return;
-            editor.model.change(function () {
-                editor.model.insertObject(
-                    { src: base64 },
-                    editor.model.document.selection
-                );
+            editor.model.change(function (writer) {
+                // Create a proper imageBlock element with the src attribute
+                const image = writer.createElement('imageBlock', { src: base64 });
+                editor.model.insertContent(image);
             });
         };
         reader.readAsDataURL(file);
@@ -174,12 +173,47 @@ const COMPENDIUM_EDITORS = (function () {
             ckeditorInstances.push(ckeditor);
 
             if (!readOnly) {
-                // Paste an image straight from the clipboard (Ctrl/Cmd+V of a
-                // copied image or a screenshot). We intercept the native paste,
-                // read any image blob, and insert it as a Base64 data URL. This
-                // covers both the normal and fullscreen edit views since they
-                // share the same editor instance.
+                // Intercept paste at the native level (capture phase) so we can
+                // handle images before CKEditor's ClipboardObserver processes them.
+                // This prevents "filerepository-no-upload-adapter" errors when
+                // pasting screenshots/blob images.
+                const editable = ckeditor.ui.getEditableElement();
+                if (editable) {
+                    editable.addEventListener('paste', (e) => {
+                        const dataTransfer = e.clipboardData;
+                        if (!dataTransfer || !dataTransfer.items || !dataTransfer.items.length) return;
+
+                        const items = Array.from(dataTransfer.items);
+                        const imgItem = items.find(
+                            it => it.kind === 'file' && it.type.indexOf('image/') === 0
+                        );
+                        if (!imgItem) return;
+
+                        const file = imgItem.getAsFile();
+                        if (!file) return;
+
+                        e.preventDefault();
+                        e.stopPropagation();
+
+                        const reader = new FileReader();
+                        reader.onload = function () {
+                            const base64 = reader.result;
+                            if (!base64) return;
+                            ckeditor.model.change(function (writer) {
+                                const image = writer.createElement('imageBlock', { src: base64 });
+                                ckeditor.model.insertContent(image);
+                            });
+                        };
+                        reader.readAsDataURL(file);
+                    }, true); // capture phase - runs before CKEditor's observer
+                }
+
+                // Also listen on view.document 'paste' as a fallback for any
+                // edge cases the native capture handler might miss.
                 ckeditor.editing.view.document.on('paste', (evt, data) => {
+                    // If the native handler already processed it, skip
+                    if (evt.defaultPrevented) return;
+
                     const dataTransfer =
                         (data && data.dataTransfer) ||
                         (evt && evt.dataTransfer) ||

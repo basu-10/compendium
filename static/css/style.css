@@ -2043,6 +2043,11 @@ p {
 
 .topic-header {
     position: relative;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
 }
 
 .topic-title-group {
@@ -2448,6 +2453,62 @@ p {
 /* Topic Header */
 .topic-header {
     position: relative;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+/* Visitor-facing "Download this topic" menu: a details/summary dropdown styled
+   to look like a secondary button so it reads as one control. Available to
+   everyone (including logged-out visitors) — distinct from the account
+   export/import in Settings, which operates on a whole logged-in account. */
+.topic-download {
+    flex-shrink: 0;
+}
+
+.download-menu {
+    position: relative;
+}
+
+.download-menu > summary {
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.download-menu > summary::-webkit-details-marker {
+    display: none;
+}
+
+.download-menu-items {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.4rem);
+    z-index: 30;
+    min-width: 11rem;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 8px 24px -8px rgba(15, 23, 42, 0.25);
+    overflow: hidden;
+}
+
+.download-menu-items a {
+    padding: 0.6rem 0.9rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.download-menu-items a:hover {
+    background-color: var(--bg-muted);
+    color: var(--text-primary);
 }
 
 .topic-title-group {

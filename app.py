@@ -3774,6 +3774,186 @@ def _account_export_rows(conn, uid):
     }
 
 
+def _topic_download_data(conn, topic_id):
+    """Load a topic plus all its statements/attachments for visitor download.
+
+    Returns None when the topic does not exist. This is a *read-only* snapshot of
+    a single public topic's content (as opposed to account_export, which dumps a
+    logged-in user's whole account) and is reachable by anyone, logged in or not.
+    """
+    topic = conn.execute('''
+        SELECT t.*, d.name as domain_name
+        FROM topics t
+        LEFT JOIN domains d ON t.domain_id = d.id
+        WHERE t.id = ?
+    ''', (topic_id,)).fetchone()
+    if topic is None:
+        return None
+    statements = conn.execute(
+        'SELECT * FROM statements WHERE topic_id = ? ORDER BY position ASC, created_at ASC',
+        (topic_id,),
+    ).fetchall()
+    statement_ids = [s['id'] for s in statements]
+    if statement_ids:
+        placeholders = ','.join('?' * len(statement_ids))
+        attachments = conn.execute(
+            f'SELECT * FROM attachments WHERE statement_id IN ({placeholders}) '
+            f'ORDER BY position ASC, created_at DESC',
+            statement_ids,
+        ).fetchall()
+    else:
+        attachments = []
+    return {
+        'topic': dict(topic),
+        'statements': [dict(s) for s in statements],
+        'attachments': [dict(a) for a in attachments],
+        'owner_username': owner_username(conn, topic['user_id']),
+    }
+
+
+def _topic_download_markdown(data):
+    """Render a topic snapshot as clean, human-readable Markdown."""
+    topic = data['topic']
+    out = []
+    out.append('# ' + (topic['name'] or 'Untitled topic'))
+    out.append('')
+    if topic.get('domain_name'):
+        out.append('*Domain:* ' + topic['domain_name'])
+    out.append('*Author:* ' + data['owner_username'])
+    if topic.get('description'):
+        out.append('')
+        out.append(topic['description'])
+    out.append('')
+    for stmt in data['statements']:
+        out.append('## ' + (stmt['text'] or ''))
+        out.append('')
+        atts = [a for a in data['attachments'] if a['statement_id'] == stmt['id']]
+        if not atts:
+            out.append('_No evidence attached._')
+            out.append('')
+            continue
+        for att in atts:
+            out.append('- **' + (att['title'] or 'Untitled') + '** '
+                       + '(' + att['type'] + ')')
+            if att['type'] in CONTENT_ONLY_TYPES:
+                body = (att['content'] or '').strip()
+                if body:
+                    # Indent the body under the bullet for readability.
+                    for line in body.splitlines() or [body]:
+                        out.append('    ' + line)
+            elif att.get('source_url'):
+                out.append('    ' + att['source_url'])
+            elif att.get('filename'):
+                out.append('    ' + att['filename'])
+        out.append('')
+    return '\n'.join(out)
+
+
+def _topic_download_html(data):
+    """Render a topic snapshot as a standalone, self-contained HTML document."""
+    topic = data['topic']
+    esc = lambda s: (s or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    parts = []
+    parts.append('<!DOCTYPE html>')
+    parts.append('<html lang="en"><head><meta charset="utf-8">')
+    parts.append('<title>' + esc(topic['name']) + ' - Compendium</title>')
+    parts.append('<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;'
+                 'max-width:760px;margin:2rem auto;padding:0 1rem;line-height:1.6;color:#1a1a1a}'
+                 'h1{border-bottom:2px solid #e2e8f0;padding-bottom:.3rem}'
+                 'h2{margin-top:1.8rem}small{color:#64748b}'
+                 'ul{margin:.4rem 0}.evidence{background:#f8fafc;border:1px solid #e2e8f0;'
+                 'border-radius:8px;padding:.3rem .9rem;margin:.4rem 0}.muted{color:#94a3b8}'
+                 '</style></head><body>')
+    parts.append('<h1>' + esc(topic['name']) + '</h1>')
+    meta = []
+    if topic.get('domain_name'):
+        meta.append('Domain: ' + esc(topic['domain_name']))
+    meta.append('Author: ' + esc(data['owner_username']))
+    if meta:
+        parts.append('<p><small>' + ' &middot; '.join(meta) + '</small></p>')
+    if topic.get('description'):
+        parts.append('<p>' + esc(topic['description']) + '</p>')
+    for stmt in data['statements']:
+        parts.append('<h2>' + esc(stmt['text']) + '</h2>')
+        atts = [a for a in data['attachments'] if a['statement_id'] == stmt['id']]
+        if not atts:
+            parts.append('<p class="muted">No evidence attached.</p>')
+            continue
+        parts.append('<ul>')
+        for att in atts:
+            parts.append('<li><div class="evidence"><strong>' + esc(att['title'] or 'Untitled')
+                         + '</strong> <small class="muted">(' + esc(att['type']) + ')</small>')
+            if att['type'] in CONTENT_ONLY_TYPES:
+                body = (att['content'] or '').strip()
+                if body:
+                    parts.append('<div>' + esc(body) + '</div>')
+            elif att.get('source_url'):
+                parts.append('<div><a href="' + esc(att['source_url']) + '">'
+                             + esc(att['source_url']) + '</a></div>')
+            elif att.get('filename'):
+                parts.append('<div class="muted">' + esc(att['filename']) + '</div>')
+            parts.append('</div></li>')
+        parts.append('</ul>')
+    parts.append('<hr><p class="muted">Exported from Compendium.</p>')
+    parts.append('</body></html>')
+    return '\n'.join(parts)
+
+
+@app.route('/topic/<int:topic_id>/download')
+def topic_download(topic_id):
+    """Stream a single public topic as a visitor-readable file.
+
+    Separate from /account/export: that dumps a logged-in user's whole account,
+    whereas this lets *anyone* (including logged-out visitors) grab one topic's
+    content without an account. `format` accepts `md` (default), `html`, or
+    `json`. Access mirrors the topic page: only the owner or a public topic is
+    reachable.
+    """
+    fmt = (request.args.get('format') or 'md').lower()
+    if fmt not in ('md', 'html', 'json'):
+        fmt = 'md'
+    conn = get_db()
+    try:
+        data = _topic_download_data(conn, topic_id)
+    finally:
+        conn.close()
+    if data is None:
+        flash('Topic not found')
+        return redirect(url_for('all_domains'))
+    topic = data['topic']
+    owner_id = topic['user_id']
+    viewer_id = g.user['id'] if g.user else None
+    if owner_id != viewer_id and not topic['is_public']:
+        flash('This topic is private')
+        return redirect(url_for('all_domains'))
+
+    safe_name = re.sub(r'[^a-z0-9_-]+', '-', (topic['name'] or 'topic').lower()).strip('-')
+    stamp = datetime.now().strftime('%Y%m%d')
+    if fmt == 'json':
+        payload = json.dumps(data, default=str, indent=2)
+        return send_file(
+            io.BytesIO(payload.encode('utf-8')),
+            mimetype='application/json',
+            as_attachment=True,
+            download_name=f'{safe_name}-{stamp}.json',
+        )
+    if fmt == 'html':
+        body = _topic_download_html(data)
+        return send_file(
+            io.BytesIO(body.encode('utf-8')),
+            mimetype='text/html',
+            as_attachment=True,
+            download_name=f'{safe_name}-{stamp}.html',
+        )
+    body = _topic_download_markdown(data)
+    return send_file(
+        io.BytesIO(body.encode('utf-8')),
+        mimetype='text/markdown',
+        as_attachment=True,
+        download_name=f'{safe_name}-{stamp}.md',
+    )
+
+
 @app.route('/account/export')
 @login_required
 def account_export():

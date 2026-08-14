@@ -18,7 +18,10 @@ breadcrumb navigation.
   `uploads/` and served with `nosniff` + sandboxed CSP headers.
 - **Dashboard** with aggregate stats, recent topics, recent evidence, and a per-domain
   breakdown.
-- **Landing / about pages** plus an "all domains" directory.
+  - **Landing / about pages** plus an "all domains" directory.
+  - **Topic download** — any visitor (including logged-out) can export a single
+    public topic as Markdown, HTML, or JSON from the topic page header. This is
+    separate from the account-wide export/import in Settings.
 - **SQLite persistence** with auto-migration and seed data on first run.
 
 ## Project Structure

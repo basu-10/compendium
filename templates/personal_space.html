@@ -59,7 +59,7 @@
                         {% set t_move_modal_id = 'ps-move-topic-' ~ t.id %}
                         {% set can_edit = true %}
                         <div class="topic-card topic-card-inline ps-topic-row">
-                            <div>
+                            <a class="topic-card-link" href="{{ url_for('topic', topic_id=t.id) }}">
                                 <div class="topic-card-name">{{ t.name }}</div>
                                 <div class="topic-card-desc">{{ t.description or 'No description' }}</div>
                                 <div class="topic-card-meta">
@@ -67,7 +67,7 @@
                                     <span>{{ t.statement_count }} statement{{ '' if t.statement_count == 1 else 's' }}</span>
                                     <span>{{ t.attachment_count }} asset{{ '' if t.attachment_count == 1 else 's' }}</span>
                                 </div>
-                            </div>
+                            </a>
                             <div class="hover-actions" onclick="event.stopPropagation();">
                                 <button type="button" class="icon-btn edit-btn" onclick="openModal('{{ t_edit_modal_id }}'); event.stopPropagation();" title="Rename" aria-label="Rename">✎</button>
                                 <button type="button" class="icon-btn move-btn" onclick="openModal('{{ t_move_modal_id }}'); event.stopPropagation();" title="Move to folder" aria-label="Move to folder">⇄</button>
@@ -190,7 +190,7 @@
                         {% set t_move_modal_id = 'ps-move-topic-' ~ t.id %}
                         {% set can_edit = true %}
                         <div class="topic-card topic-card-inline ps-topic-row">
-                            <div>
+                            <a class="topic-card-link" href="{{ url_for('topic', topic_id=t.id) }}">
                                 <div class="topic-card-name">{{ t.name }}{% if t.is_public %} <span class="is-public-badge">Public</span>{% endif %}</div>
                                 <div class="topic-card-desc">{{ t.description or 'No description' }}</div>
                                 <div class="topic-card-meta">
@@ -199,7 +199,7 @@
                                     <span>{{ t.statement_count }} statement{{ '' if t.statement_count == 1 else 's' }}</span>
                                     <span>{{ t.attachment_count }} asset{{ '' if t.attachment_count == 1 else 's' }}</span>
                                 </div>
-                            </div>
+                            </a>
                             <div class="hover-actions" onclick="event.stopPropagation();">
                                 <button type="button" class="icon-btn edit-btn" onclick="openModal('{{ t_edit_modal_id }}'); event.stopPropagation();" title="Rename" aria-label="Rename">✎</button>
                                 <button type="button" class="icon-btn move-btn" onclick="openModal('{{ t_move_modal_id }}'); event.stopPropagation();" title="Move to folder" aria-label="Move to folder">⇄</button>

@@ -1714,7 +1714,7 @@ p {
     background-color: rgba(15, 27, 45, 0.42);
     -webkit-backdrop-filter: blur(2px);
     backdrop-filter: blur(2px);
-    z-index: 1000;
+    z-index: 9999;
     justify-content: center;
     align-items: center;
     padding: 1rem;
@@ -2375,6 +2375,7 @@ p {
     /* Sit above the card title/badge so the toolbar never collides with them,
        even on narrow widths where the pill wraps. */
     z-index: 5;
+    pointer-events: none;
 }
 
 .statement:hover .hover-actions,
@@ -2392,6 +2393,28 @@ p {
 .hover-actions.touch-visible {
     opacity: 1;
     transform: translateY(0);
+    pointer-events: auto;
+}
+
+/* While a modal is open, suppress page hover toolbars and card animations so
+   the backdrop blur doesn't re-composite a rapidly-changing underlayer. */
+body.modal-open .hover-actions,
+body.modal-open .topic-card:hover .hover-actions,
+body.modal-open .folder-card:hover .hover-actions,
+body.modal-open .ps-topic-row .hover-actions,
+body.modal-open .folder-card > .topic-card-summary .hover-actions,
+body.modal-open .hover-actions:focus-within,
+body.modal-open .hover-actions.touch-visible {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transform: none !important;
+}
+body.modal-open .topic-card:hover,
+body.modal-open .folder-card:hover,
+body.modal-open .ps-topic-row:hover,
+body.modal-open .topic-card-summary:hover {
+    transform: none;
+    box-shadow: none;
 }
 
 @media (hover: none) and (pointer: coarse) {

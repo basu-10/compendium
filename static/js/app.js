@@ -43,6 +43,7 @@ function openModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
         modal.classList.add('active');
+        document.body.classList.add('modal-open');
         document.body.style.overflow = 'hidden';
         const focusable = modal.querySelector('input, textarea, select, button');
         if (focusable) focusable.focus();
@@ -53,6 +54,9 @@ function closeModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
         modal.classList.remove('active');
+        if (!document.querySelectorAll('.modal-overlay.active').length) {
+            document.body.classList.remove('modal-open');
+        }
         document.body.style.overflow = '';
         // Edit mode is what reveals an item's delete button, so it must not
         // outlive the editor it was opened for.

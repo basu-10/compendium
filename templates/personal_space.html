@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Personal Space - Compendium{% endblock %}
+
+{% block breadcrumb %}{% endblock %}
+
+{% block content %}
+<div class="personal-space">
+    <header class="section-header">
+        <h1>Personal Space</h1>
+        <p class="personal-space-sub">Everything you own, regardless of domain. Private topics live here only; published topics are also listed in their domain.</p>
+    </header>
+
+    <section class="personal-group">
+        <h2 class="personal-group-title">Private <span class="count-badge">{{ private_topics | length }}</span></h2>
+        {% if private_topics %}
+        <div class="topic-grid">
+            {% for t in private_topics %}
+            <a class="topic-card" href="{{ url_for('topic', topic_id=t.id) }}">
+                <div class="topic-card-name">{{ t.name }}</div>
+                <div class="topic-card-desc">{{ t.description or 'No description' }}</div>
+                <div class="topic-card-meta">
+                    <span class="is-private-badge">Private</span>
+                    <span>{{ t.statement_count }} statement{{ '' if t.statement_count == 1 else 's' }}</span>
+                    <span>{{ t.attachment_count }} asset{{ '' if t.attachment_count == 1 else 's' }}</span>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="empty-state">No private topics yet. Create one from any domain, or duplicate a public topic to make it yours.</p>
+        {% endif %}
+    </section>
+
+    <section class="personal-group">
+        <h2 class="personal-group-title">Published <span class="count-badge">{{ public_topics | length }}</span></h2>
+        {% if public_topics %}
+        <div class="topic-grid">
+            {% for t in public_topics %}
+            <a class="topic-card" href="{{ url_for('topic', topic_id=t.id) }}">
+                <div class="topic-card-name">{{ t.name }}</div>
+                <div class="topic-card-desc">{{ t.description or 'No description' }}</div>
+                <div class="topic-card-meta">
+                    <span class="is-public-badge">Public</span>
+                    {% if t.domain_name %}<span>{{ t.domain_name }}</span>{% endif %}
+                    <span>{{ t.statement_count }} statement{{ '' if t.statement_count == 1 else 's' }}</span>
+                    <span>{{ t.attachment_count }} asset{{ '' if t.attachment_count == 1 else 's' }}</span>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="empty-state">No published topics yet.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

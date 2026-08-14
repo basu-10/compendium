@@ -1031,6 +1031,43 @@ def dashboard():
         asset_kind=asset_kind,
     )
 
+
+@app.route('/personal')
+@login_required
+def personal_space():
+    """The owner's personal space: every topic they own, private or published.
+
+    Under the publish model a topic's domain_id is NULL while private, so the
+    personal space lists by user_id alone (not by domain) and groups topics into
+    private (personal-only) and public (attached to a domain) buckets. This is the
+    home for content that is not in any domain listing.
+    """
+    conn = get_db()
+    uid = g.user['id']
+    owned = conn.execute('''
+        SELECT t.id, t.name, t.description, t.is_public, t.domain_id,
+               d.name AS domain_name,
+               COUNT(DISTINCT s.id) AS statement_count,
+               COUNT(DISTINCT a.id) AS attachment_count
+        FROM topics t
+        LEFT JOIN domains d ON t.domain_id = d.id
+        LEFT JOIN statements s ON s.topic_id = t.id
+        LEFT JOIN attachments a ON a.statement_id = s.id
+        WHERE t.user_id = ?
+        GROUP BY t.id
+        ORDER BY t.created_at DESC
+    ''', (uid,)).fetchall()
+    private_topics = [dict(r) for r in owned if not r['is_public']]
+    public_topics = [dict(r) for r in owned if r['is_public']]
+    conn.close()
+    return render_template(
+        'personal_space.html',
+        private_topics=private_topics,
+        public_topics=public_topics,
+        asset_kind=asset_kind,
+    )
+
+
 @app.route('/domain/<int:domain_id>')
 def domain(domain_id):
     conn = get_db()

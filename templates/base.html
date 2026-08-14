@@ -79,6 +79,9 @@
                 <a href="{{ url_for('dashboard') }}" class="sidebar-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
                     <span class="sidebar-icon">&#9632;</span> Dashboard
                 </a>
+                <a href="{{ url_for('personal_space') }}" class="sidebar-link {% if request.endpoint == 'personal_space' %}active{% endif %}">
+                    <span class="sidebar-icon">&#9632;</span> Personal Space
+                </a>
                 <a href="{{ url_for('user_public', username=current_user.username) }}" class="sidebar-link {% if request.endpoint == 'user_public' %}active{% endif %}">
                     <span class="sidebar-icon">&#9632;</span> My Public Page
                 </a>
@@ -156,6 +159,12 @@
                 </span>
                 <span class="mobile-nav-label">Dashboard</span>
             </a>
+            <a href="{{ url_for('personal_space') }}" class="mobile-nav-link {% if request.endpoint == 'personal_space' %}active{% endif %}">
+                <span class="mobile-nav-icon" aria-hidden="true">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9M14 17H5"/><circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/></svg>
+                </span>
+                <span class="mobile-nav-label">Space</span>
+            </a>
             <a href="{{ url_for('user_public', username=current_user.username) }}" class="mobile-nav-link {% if request.endpoint == 'user_public' %}active{% endif %}">
                 <span class="mobile-nav-icon" aria-hidden="true">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -178,6 +187,12 @@
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
                     </span>
                     <span class="mobile-nav-flyout-label">Home</span>
+                </a>
+                <a href="{{ url_for('personal_space') }}" class="mobile-nav-flyout-link">
+                    <span class="mobile-nav-flyout-icon" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9M14 17H5"/><circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/></svg>
+                    </span>
+                    <span class="mobile-nav-flyout-label">Personal Space</span>
                 </a>
                 <a href="{{ url_for('about') }}" class="mobile-nav-flyout-link">
                     <span class="mobile-nav-flyout-icon" aria-hidden="true">

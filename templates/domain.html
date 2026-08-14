@@ -37,6 +37,30 @@
         {% endif %}
     </div>
 
+    {% if can_edit %}
+    {# Owner folder publish/unpublish bar. A folder's visibility drives every
+       topic inside it (cascaded), so publishing here attaches the chosen domain. #}
+    <div class="owner-publish-bar folder-publish-bar">
+        {% if node.is_public %}
+        <span class="public-attrib public-attrib-owner">Public &middot; visible to everyone</span>
+        <form method="POST" action="{{ url_for('unpublish_folder', folder_id=node.id) }}" style="display:inline;">
+            <button type="submit" class="btn btn-secondary">Unpublish folder</button>
+        </form>
+        {% else %}
+        <span class="public-attrib">Private &middot; personal space only</span>
+        <form method="POST" action="{{ url_for('publish_folder', folder_id=node.id) }}" style="display:inline;">
+            <select name="domain_id" required aria-label="Domain to publish folder into">
+                <option value="">Publish into domain…</option>
+                {% for d in [domain] %}
+                <option value="{{ d.id }}">{{ d.name }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-primary">Publish folder</button>
+        </form>
+        {% endif %}
+    </div>
+    {% endif %}
+
     {% set modal_id = add_topic_modal_id %}
     {% set domain_id = domain.id %}
     {% set current_folder_id = node.id %}

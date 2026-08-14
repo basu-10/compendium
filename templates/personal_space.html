@@ -12,7 +12,22 @@
     </header>
 
     <section class="personal-group">
-        <h2 class="personal-group-title">Private <span class="count-badge">{{ private_topics | length }}</span></h2>
+        <h2 class="personal-group-title">Private <span class="count-badge">{{ private_topics | length + private_folders | length }}</span></h2>
+        {% if private_folders %}
+        <div class="topic-grid">
+            {% for f in private_folders %}
+            <a class="topic-card" href="{{ url_for('domain', domain_id=f.domain_id) if f.domain_id else url_for('personal') }}#folder-header-{{ f.id }}">
+                <div class="topic-card-name">&#128193; {{ f.name }}</div>
+                <div class="topic-card-desc">{{ f.description or 'No description' }}</div>
+                <div class="topic-card-meta">
+                    <span class="is-private-badge">Folder · Private</span>
+                    <span>{{ f.topic_count }} topic{{ '' if f.topic_count == 1 else 's' }}</span>
+                    {% if f.child_count %}<span>{{ f.child_count }} sub-folder{{ '' if f.child_count == 1 else 's' }}</span>{% endif %}
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% endif %}
         {% if private_topics %}
         <div class="topic-grid">
             {% for t in private_topics %}
@@ -27,13 +42,30 @@
             </a>
             {% endfor %}
         </div>
-        {% else %}
-        <p class="empty-state">No private topics yet. Create one from any domain, or duplicate a public topic to make it yours.</p>
+        {% endif %}
+        {% if not private_folders and not private_topics %}
+        <p class="empty-state">No private content yet. Create one from any domain, or duplicate a public topic to make it yours.</p>
         {% endif %}
     </section>
 
     <section class="personal-group">
-        <h2 class="personal-group-title">Published <span class="count-badge">{{ public_topics | length }}</span></h2>
+        <h2 class="personal-group-title">Published <span class="count-badge">{{ public_topics | length + public_folders | length }}</span></h2>
+        {% if public_folders %}
+        <div class="topic-grid">
+            {% for f in public_folders %}
+            <a class="topic-card" href="{{ url_for('domain', domain_id=f.domain_id) }}#folder-header-{{ f.id }}">
+                <div class="topic-card-name">&#128193; {{ f.name }}</div>
+                <div class="topic-card-desc">{{ f.description or 'No description' }}</div>
+                <div class="topic-card-meta">
+                    <span class="is-public-badge">Folder · Public</span>
+                    {% if f.domain_name %}<span>{{ f.domain_name }}</span>{% endif %}
+                    <span>{{ f.topic_count }} topic{{ '' if f.topic_count == 1 else 's' }}</span>
+                    {% if f.child_count %}<span>{{ f.child_count }} sub-folder{{ '' if f.child_count == 1 else 's' }}</span>{% endif %}
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% endif %}
         {% if public_topics %}
         <div class="topic-grid">
             {% for t in public_topics %}

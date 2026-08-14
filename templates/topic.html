@@ -5,10 +5,12 @@
 {% block breadcrumb %}
 <div class="breadcrumb-bar">
     <a href="{{ url_for('all_domains') }}">All Domains</a>
-    &gt; <a href="{{ url_for('domain', domain_id=topic.domain_id) }}">{{ topic.domain_name }}</a>
-    {% if folder_path %}
+    {% if topic_domain_id is not none %}
+    &gt; <a href="{{ url_for('domain', domain_id=topic_domain_id) }}">{{ topic_domain_name }}</a>
+    {% endif %}
+    {% if folder_path and topic_domain_id is not none %}
     {% for crumb in folder_path %}
-    &gt; <a href="{{ url_for('domain', domain_id=topic.domain_id) }}#folder-header-{{ crumb.id }}">{{ crumb.name }}</a>
+    &gt; <a href="{{ url_for('domain', domain_id=topic_domain_id) }}#folder-header-{{ crumb.id }}">{{ crumb.name }}</a>
     {% endfor %}
     {% endif %}
     &gt; <span>{{ topic.name }}</span>
@@ -22,14 +24,14 @@
     {% set topic_move_modal_id = 'move-topic-' ~ topic.id %}
     <div class="section-header topic-header" id="topic-header">
         <div class="topic-title-group">
-            {% if folder_path %}
-            <a href="{{ url_for('domain', domain_id=topic.domain_id) }}#folder-header-{{ folder_path[-1].id }}" class="back-btn"
+            {% if folder_path and topic_domain_id is not none %}
+            <a href="{{ url_for('domain', domain_id=topic_domain_id) }}#folder-header-{{ folder_path[-1].id }}" class="back-btn"
                title="Back to {{ folder_path[-1].name }}" aria-label="Back to {{ folder_path[-1].name }}">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
             </a>
-            {% else %}
-            <a href="{{ url_for('domain', domain_id=topic.domain_id) }}" class="back-btn"
-               title="Back to {{ topic.domain_name }}" aria-label="Back to {{ topic.domain_name }}">
+            {% elif topic_domain_id is not none %}
+            <a href="{{ url_for('domain', domain_id=topic_domain_id) }}" class="back-btn"
+               title="Back to {{ topic_domain_name }}" aria-label="Back to {{ topic_domain_name }}">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
             </a>
             {% endif %}
@@ -48,8 +50,16 @@
     </div>
 
     {% if can_edit %}
-    {# Owner controls: publish/unpublish. Publishing attaches the topic to a
-       domain the owner picks; unpublishing detaches it back to personal space. #}
+    {# Owner controls. If the topic lives inside a folder, its visibility is
+       controlled by the parent folder, so the per-topic publish/unpublish
+       controls are replaced with a note linking to the folder. #}
+    {% if topic.folder_id %}
+    <div class="owner-publish-bar">
+        <span class="public-attrib">Visibility controlled by its folder
+            {% if folder_path and topic_domain_id is not none %}<a href="{{ url_for('domain', domain_id=topic_domain_id) }}#folder-header-{{ topic.folder_id }}">{{ folder_path[-1].name }}</a>{% elif folder_path %}{{ folder_path[-1].name }}{% endif %}
+        </span>
+    </div>
+    {% else %}
     <div class="owner-publish-bar">
         {% if topic.is_public %}
         <span class="public-attrib public-attrib-owner">Public &middot; visible to everyone</span>
@@ -69,6 +79,7 @@
         </form>
         {% endif %}
     </div>
+    {% endif %}
     {% elif topic.is_public and logged_in %}
     <div class="public-attrib">Public topic &middot; by <strong>{{ owner_username }}</strong></div>
     <form method="POST" action="{{ url_for('duplicate_public_topic', topic_id=topic.id) }}" style="display:inline;">

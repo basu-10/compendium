@@ -90,14 +90,23 @@ schema migrations and seeds three example domains.
 - **domains** — top-level categories (`name`, `description`). Shared, owner-less. A topic
   is attached to a domain **only while published** (see publish model below).
 - **folders** — belong to a domain (`name`, `description`, `parent_id`); form a tree inside
-  a domain. A topic may sit directly under a domain or under a folder.
-- **topics** — `name`, `description`, `created_at`, `user_id` (owner), `is_public`,
-  `folder_id`, and `authors` (JSON array of user ids recording the owner lineage across
-  duplicates). `domain_id` is **nullable**: NULL while private (personal space only), set to
-  the chosen domain while published (`is_public = 1`).
-- **statements** — belong to a topic (`text`, `created_at`).
-- **attachments** — belong to a statement (`title`, `type`, `content`, `filename`); the
-  `type` column is constrained to the supported asset types.
+  a domain. A topic may sit directly under a domain or under a folder. `domain_id` is
+  **nullable**: a folder carries a domain only while published (`is_public = 1`); a private
+  folder has `domain_id = NULL`. Folders are themselves owned (`user_id`); they are not
+  publish targets themselves — a domain is.
+
+### Domains are publish targets, not ownership containers (hard rule)
+
+Content (topics, and folders that contain topics) is **owned by a user**. A row carries a
+`domain_id` only while it is **published** (`is_public = 1`); when private, `domain_id` is
+`NULL`. Therefore `folders.domain_id` and `topics.domain_id` are both nullable, and **no
+code path may assume content "already has a domain"** — creation of a folder or loose topic
+never requires a domain. Publishing attaches the chosen domain.
+
+A **foldered topic's** visibility is **derived from its parent folder**: the topic's own
+`is_public` / `domain_id` are not user-editable. Publishing or unpublishing a folder
+**cascades** the same `is_public` / `domain_id` to every descendant folder and topic. A
+loose topic (`folder_id IS NULL`) is published/unpublished directly by its owner.
 
 ### Publish model
 
@@ -107,6 +116,12 @@ and `domain_id = <chosen domain>`. The same row is then visible to everyone (log
 out) and is edited live — there is no copy/clone on publish, and nothing is hidden during
 editing. **Unpublishing** sets `is_public = 0` and `domain_id = NULL`, returning the topic to
 personal space.
+
+A **folder** is published the same way via Publish folder (owner picks the domain); the
+publish **cascades** to every topic and sub-folder inside it, so a public folder makes all of
+its contents public into that domain, and unpublishing the folder returns the whole subtree
+to personal space. Foldered topics have no independent publish control — their visibility
+follows the folder.
 
 Any logged-in, non-owning visitor of a public topic may **Duplicate** it. Duplicate creates a
 brand-new private topic owned by the duplicating user (`user_id = duplicator`, `domain_id =
@@ -118,10 +133,12 @@ duplicate/move toolbar on their own topics; non-owners see only Duplicate.
 
 ### Migration (existing data)
 
-On startup `init_db()` migrates legacy data to the publish model: `topics.domain_id` is made
-nullable, and every private topic (`is_public = 0`) has its `domain_id` stripped (moved to
-personal space); public topics keep their domain. `authors` is added and backfilled with the
-topic's owner id. Idempotent, so re-running is safe.
+On startup `init_db()` migrates legacy data to the publish model: `topics.domain_id` and
+`folders.domain_id` are made nullable; every private row (`is_public = 0`) has its `domain_id`
+stripped (moved to personal space), while public rows keep theirs. For every foldered topic,
+the parent folder's `is_public`/`domain_id` are copied onto the topic (the folder is the
+source of truth for foldered visibility). `authors` is added and backfilled with the topic's
+owner id. Idempotent, so re-running is safe.
 
 Deleting a domain, topic, or statement cascades to its children and removes any
 referenced upload files from disk.

@@ -482,7 +482,7 @@ def init_db():
 
         CREATE TABLE IF NOT EXISTS folders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            domain_id INTEGER NOT NULL,
+            domain_id INTEGER,
             parent_id INTEGER,
             name TEXT NOT NULL,
             description TEXT,
@@ -531,10 +531,27 @@ def init_db():
     # column is nullable so a topic may sit directly under a domain if needed.
     _ensure_column(conn, cursor, 'topics', 'folder_id', 'INTEGER')
 
+    # -----------------------------------------------------------------------
+    # HARD RULE — domains are PUBLISH TARGETS, not ownership containers.
+    # Content (topics, and folders containing topics) is owned by a user. A row
+    # only carries a domain_id while it is published (is_public = 1). When
+    # private, domain_id is NULL. Therefore topics.domain_id and
+    # folders.domain_id MUST both be nullable, and no code path may assume
+    # content already has a domain. Creation of a folder or loose topic never
+    # requires a domain; publishing attaches the chosen domain. For foldered
+    # topics, is_public/domain_id are DERIVED from the parent folder and are not
+    # user-editable (see publish_folder/unpublish_folder + cascade-backfill
+    # below). Do NOT regress these assumptions.
+    # -----------------------------------------------------------------------
     # New publish model requires topics.domain_id to be nullable (private topics
     # have no domain). Rebuild topics to drop the legacy NOT NULL before any
     # migration nulls the column. Must run before the author/domain backfills.
     _migrate_topics_domain_nullable(conn, cursor)
+
+    # The same rule applies to folders: domain_id must be nullable so a folder
+    # can be created/owned without a domain. Rebuild folders to drop the legacy
+    # NOT NULL (guarded, idempotent, same pattern as the topics migration).
+    _migrate_folders_domain_nullable(conn, cursor)
 
     # New publish model migration: now that domain_id is nullable, strip the
     # domain from every legacy private topic so it lives in the owner's personal
@@ -544,6 +561,24 @@ def init_db():
         'UPDATE topics SET domain_id = NULL '
         'WHERE is_public = 0 AND domain_id IS NOT NULL'
     )
+    # Mirror the above for folders: a private folder (is_public=0) must not carry
+    # a domain. Public folders keep theirs. No-op after first run.
+    cursor.execute(
+        'UPDATE folders SET domain_id = NULL '
+        'WHERE is_public = 0 AND domain_id IS NOT NULL'
+    )
+    # Cascade-backfill: for every foldered topic, copy the parent folder's
+    # is_public and domain_id onto the topic (folder is the source of truth for
+    # foldered content's visibility). This makes existing foldered topics agree
+    # with the derived-visibility rule.
+    cursor.execute('''
+        UPDATE topics SET is_public = (
+            SELECT f.is_public FROM folders f WHERE f.id = topics.folder_id
+        ), domain_id = (
+            SELECT f.domain_id FROM folders f WHERE f.id = topics.folder_id
+        )
+        WHERE folder_id IS NOT NULL AND folder_id IN (SELECT id FROM folders)
+    ''')
     # Backfill authors for any topic missing the value: seed it with the topic's
     # owner id (every topic has a user_id). Guarded by the WHERE so re-runs are
     # no-ops.
@@ -800,6 +835,70 @@ def _migrate_domains(conn, cursor):
                 (target_id, source_id),
             )
             cursor.execute("DELETE FROM domains WHERE id = ?", (source_id,))
+
+
+def _migrate_folders_domain_nullable(conn, cursor):
+    """Make `folders.domain_id` nullable so a folder may exist without a domain.
+
+    New publish model: a folder only carries a domain_id while published
+    (is_public=1); a private (personal) folder has domain_id NULL. The original
+    schema declared domain_id NOT NULL, so rebuild the table (the same guarded
+    rebuild pattern as the topics migration) to drop the NOT NULL, copying every
+    row. Runs exactly once, guarded by a PRAGMA type check.
+    """
+    cursor.execute("PRAGMA table_info(folders)")
+    col = next((r for r in cursor.fetchall() if r['name'] == 'domain_id'), None)
+    if col is None or col['notnull'] == 0:
+        return
+    conn.commit()
+    prior_isolation = conn.isolation_level
+    conn.isolation_level = None
+    cursor.execute('PRAGMA foreign_keys = OFF')
+    try:
+        cursor.execute('BEGIN IMMEDIATE')
+        try:
+            cursor.execute('DROP TABLE IF EXISTS folders_new')
+            # New shape keeps every folder column; only domain_id loses NOT NULL.
+            # parent_id is re-declared so the FK survives the rebuild intact.
+            cursor.execute('''CREATE TABLE folders_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                domain_id INTEGER,
+                parent_id INTEGER,
+                name TEXT NOT NULL,
+                description TEXT,
+                is_public INTEGER NOT NULL DEFAULT 0,
+                user_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (domain_id) REFERENCES domains (id) ON DELETE CASCADE,
+                FOREIGN KEY (parent_id) REFERENCES folders (id) ON DELETE CASCADE
+            )''')
+            cursor.execute('''
+                INSERT INTO folders_new (id, domain_id, parent_id, name, description, is_public, user_id, created_at)
+                SELECT id, domain_id, parent_id, name, description, is_public, user_id, created_at FROM folders
+            ''')
+            cursor.execute('DROP TABLE folders')
+            cursor.execute('ALTER TABLE folders_new RENAME TO folders')
+            violations = cursor.execute("PRAGMA foreign_key_check('folders')").fetchall()
+            if violations:
+                raise sqlite3.IntegrityError(f'foreign key violations after folders rebuild: {violations}')
+            cursor.execute('COMMIT')
+        except Exception:
+            cursor.execute('ROLLBACK')
+            raise
+    finally:
+        cursor.execute('PRAGMA foreign_keys = ON')
+        conn.isolation_level = prior_isolation
+
+
+
+    """Make `topics.domain_id` nullable so private topics can leave all domains.
+
+    New publish model: a topic only carries a domain_id while published
+    (is_public=1); private topics have domain_id NULL. The original schema
+    declared domain_id NOT NULL, so rebuild the table (the same guarded rebuild
+    pattern as the other migrations) to drop the NOT NULL, copying every row.
+    Runs exactly once, guarded by a PRAGMA type check.
+    """
 
 
 def _migrate_topics_domain_nullable(conn, cursor):
@@ -1059,11 +1158,28 @@ def personal_space():
     ''', (uid,)).fetchall()
     private_topics = [dict(r) for r in owned if not r['is_public']]
     public_topics = [dict(r) for r in owned if r['is_public']]
+    # Folders the user owns, grouped by publish state. A folder's visibility is
+    # its own (and drives its topics), so it is listed here for management even
+    # though loose topics carry the folder relationship transitively.
+    owned_folders = conn.execute('''
+        SELECT f.id, f.name, f.description, f.is_public, f.domain_id,
+               d.name AS domain_name,
+               (SELECT COUNT(*) FROM folders c WHERE c.parent_id = f.id) AS child_count,
+               (SELECT COUNT(*) FROM topics t WHERE t.folder_id = f.id) AS topic_count
+        FROM folders f
+        LEFT JOIN domains d ON f.domain_id = d.id
+        WHERE f.user_id = ?
+        ORDER BY f.created_at DESC
+    ''', (uid,)).fetchall()
+    private_folders = [dict(r) for r in owned_folders if not r['is_public']]
+    public_folders = [dict(r) for r in owned_folders if r['is_public']]
     conn.close()
     return render_template(
         'personal_space.html',
         private_topics=private_topics,
         public_topics=public_topics,
+        private_folders=private_folders,
+        public_folders=public_folders,
         asset_kind=asset_kind,
     )
 
@@ -1254,7 +1370,7 @@ def topic(topic_id):
     topic = conn.execute('''
         SELECT t.*, d.name as domain_name
         FROM topics t 
-        JOIN domains d ON t.domain_id = d.id 
+        LEFT JOIN domains d ON t.domain_id = d.id 
         WHERE t.id = ?
     ''', (topic_id,)).fetchone()
     # Access: owner sees it; everyone else only when the topic is public.
@@ -1275,18 +1391,27 @@ def topic(topic_id):
         while fid and fid not in seen:
             seen.add(fid)
             row = cursor.execute(
-                'SELECT id, parent_id, name FROM folders WHERE id = ?', (fid,)
+                'SELECT id, parent_id, name, domain_id FROM folders WHERE id = ?', (fid,)
             ).fetchone()
             if not row:
                 break
             folder_path.insert(0, {'id': row['id'], 'name': row['name']})
             fid = row['parent_id']
+    # The "current domain" for folder/topic pickers is the topic's own domain when
+    # it has one, otherwise the domain of its (published) folder, else None.
+    effective_domain_id = topic['domain_id']
+    if effective_domain_id is None and topic['folder_id']:
+        fp = folder_path and conn.execute(
+            'SELECT domain_id FROM folders WHERE id = ?', (topic['folder_id'],)
+        ).fetchone()
+        if fp:
+            effective_domain_id = fp['domain_id']
     # Flat, depth-indented folder list for the Move-topic <select> (the topic
     # page header also exposes Move). Reuses the same nesting as the domain page.
     all_folders = []
-    if topic:
+    if topic and effective_domain_id is not None:
         domain_folders = conn.execute(
-            'SELECT * FROM folders WHERE domain_id = ? ORDER BY name', (topic['domain_id'],)
+            'SELECT * FROM folders WHERE domain_id = ? ORDER BY name', (effective_domain_id,)
         ).fetchall()
         topic_rows = conn.execute('''
             SELECT t.id, t.name, t.description, t.folder_id,
@@ -1298,7 +1423,7 @@ def topic(topic_id):
             WHERE t.domain_id = ? AND t.folder_id IS NOT NULL
             GROUP BY t.id
             ORDER BY t.created_at DESC
-        ''', (topic['domain_id'],)).fetchall()
+        ''', (effective_domain_id,)).fetchall()
         topics_by_folder = {}
         for row in topic_rows:
             fid = row['folder_id']
@@ -1315,11 +1440,22 @@ def topic(topic_id):
     # All topics in this domain, used by the statement "Move to topic" modal. The
     # current topic is excluded client-side (a statement cannot move to itself).
     domain_topics = []
-    if topic:
+    if topic and effective_domain_id is not None:
         domain_topics = conn.execute(
             'SELECT id, name FROM topics WHERE domain_id = ? ORDER BY name',
-            (topic['domain_id'],),
+            (effective_domain_id,),
         ).fetchall()
+    # Resolve the display domain (id + name) for breadcrumbs/links: the topic's own
+    # domain when it has one, else the domain of its folder (the folder is the
+    # source of truth for a foldered topic's placement). May be None for a private,
+    # un-foldered personal topic.
+    topic_domain_id = effective_domain_id
+    topic_domain_name = None
+    if effective_domain_id is not None:
+        dn = conn.execute(
+            'SELECT name FROM domains WHERE id = ?', (effective_domain_id,)
+        ).fetchone()
+        topic_domain_name = dn['name'] if dn else None
     statements = conn.execute('SELECT * FROM statements WHERE topic_id = ? ORDER BY position ASC, created_at ASC', (topic_id,)).fetchall()
     statement_ids = [s['id'] for s in statements]
     if statement_ids:
@@ -1424,6 +1560,8 @@ def topic(topic_id):
         can_edit=can_edit,
         owner_username=owner_name,
         topic_authors=topic_authors,
+        topic_domain_id=topic_domain_id,
+        topic_domain_name=topic_domain_name,
     )
 
 @app.route('/create_topic', methods=['POST'])
@@ -1433,31 +1571,38 @@ def create_topic():
     name = request.form.get('name', '').strip()
     description = request.form.get('description', '').strip()
     folder_id = request.form.get('folder_id') or None
-    if not domain_id or not name:
-        flash('Domain and topic name are required')
+    if not name:
+        flash('Topic name is required')
         return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
-    # Domains are shared: any logged-in user may create a topic in any domain,
-    # so the only check is that the domain exists (no per-user domain gate).
-    domain = conn.execute('SELECT id FROM domains WHERE id = ?', (domain_id,)).fetchone()
-    if not domain:
-        conn.close()
-        flash('Domain not found')
-        return redirect(url_for('all_domains'))
-    # Validate any supplied folder belongs to this domain (topics.domain_id has
-    # no declared FK to folders, so ownership is checked here in app code).
+    # A topic may be created inside a folder without supplying a domain: the
+    # folder owns the relationship and the topic derives its visibility from the
+    # folder. A loose topic (no folder) carries a domain only when published.
+    folder = None
     if folder_id:
-        folder = conn.execute(
-            'SELECT id FROM folders WHERE id = ? AND domain_id = ?',
-            (folder_id, domain_id),
-        ).fetchone()
+        folder = conn.execute('SELECT * FROM folders WHERE id = ?', (folder_id,)).fetchone()
         if not folder:
             folder_id = None
-    is_public = 1 if request.form.get('is_public') else 0
-    # New publish model: a topic is private (personal space) on creation, so it
-    # has no domain_id until the owner publishes it. Publishing is an explicit
-    # action via the publish_topic route, which attaches the chosen domain_id.
-    domain_id_for_insert = domain_id if is_public else None
+    if folder_id:
+        # Visibility is inherited from the (possibly private, domain-less) folder;
+        # the topic's own domain_id/is_public are ignored in favour of the folder.
+        is_public = folder['is_public']
+        domain_id_for_insert = folder['domain_id']
+    else:
+        if not domain_id:
+            flash('Choose a domain to publish this topic into')
+            conn.close()
+            return redirect(request.referrer or url_for('all_domains'))
+        domain = conn.execute('SELECT id FROM domains WHERE id = ?', (domain_id,)).fetchone()
+        if not domain:
+            conn.close()
+            flash('Domain not found')
+            return redirect(url_for('all_domains'))
+        is_public = 1 if request.form.get('is_public') else 0
+        # New publish model: a loose topic is private (personal space) on creation,
+        # so it has no domain_id until the owner publishes it, which attaches the
+        # chosen domain_id via the publish_topic route.
+        domain_id_for_insert = domain_id if is_public else None
     conn.execute(
         'INSERT INTO topics (domain_id, folder_id, name, description, user_id, is_public, authors) '
         'VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -1476,32 +1621,44 @@ def create_folder():
     name = request.form.get('name', '').strip()
     description = request.form.get('description', '').strip()
     parent_id = request.form.get('parent_id') or None
-    if not domain_id or not name:
-        flash('Domain and folder name are required')
+    if not name:
+        flash('Folder name is required')
         return redirect(request.referrer or url_for('all_domains'))
     conn = get_db()
     try:
-        # Domains are shared: any logged-in user may create a folder in any domain,
-        # so the only check is that the domain exists (no per-user domain gate).
-        domain = conn.execute('SELECT id FROM domains WHERE id = ?', (domain_id,)).fetchone()
-        if not domain:
-            flash('Domain not found')
-            return redirect(url_for('all_domains'))
-        # A parent folder must exist and belong to this domain.
+        # Domains are publish targets, not ownership containers: a folder may be
+        # created without a domain (a personal, un-published folder). A domain is
+        # only required when the folder is being created already public. We keep a
+        # domain_id only for a public folder and otherwise store NULL.
+        is_public = 1 if request.form.get('is_public') else 0
+        domain_id_for_insert = None
+        if is_public:
+            if not domain_id:
+                flash('Choose a domain to publish this folder into')
+                return redirect(request.referrer or url_for('all_domains'))
+            domain = conn.execute('SELECT id FROM domains WHERE id = ?', (domain_id,)).fetchone()
+            if not domain:
+                flash('Domain not found')
+                return redirect(request.referrer or url_for('all_domains'))
+            domain_id_for_insert = domain['id']
+        # A parent folder must exist and belong to the same domain as this folder
+        # (or to no domain when creating a personal folder). Validated only when a
+        # parent + domain are both supplied, so a personal sub-folder under a
+        # personal parent is allowed.
         if parent_id:
             parent = conn.execute(
-                'SELECT id FROM folders WHERE id = ? AND domain_id = ?',
-                (parent_id, domain_id),
+                'SELECT id FROM folders WHERE id = ?'
+                + (' AND domain_id = ?' if domain_id_for_insert is not None else ''),
+                (parent_id, domain_id_for_insert) if domain_id_for_insert is not None else (parent_id,),
             ).fetchone()
             if not parent:
                 parent_id = None
-        is_public = 1 if request.form.get('is_public') else 0
         conn.execute(
             'INSERT INTO folders (domain_id, parent_id, name, description, user_id, is_public) VALUES (?, ?, ?, ?, ?, ?)',
-            (domain_id, parent_id, name, description, g.user['id'], is_public),
+            (domain_id_for_insert, parent_id, name, description, g.user['id'], is_public),
         )
         conn.commit()
-        return redirect(url_for('domain', domain_id=domain_id))
+        return redirect(url_for('domain', domain_id=domain_id) if domain_id else url_for('personal_space'))
     finally:
         conn.close()
 
@@ -1553,13 +1710,31 @@ def update_folder():
             conn.close()
             flash('Cannot move a folder into one of its own sub-folders')
             return redirect(url_for('domain', domain_id=folder['domain_id']))
+    # A folder may be toggled public/private here, but publishing requires a
+    # chosen domain, which the edit modal does not provide. So we only keep the
+    # folder public when it already has a valid domain; otherwise toggling public
+    # on without a domain is treated as still-private (use Publish for that).
+    effective_public = 0
+    effective_domain = None
+    if is_public:
+        if folder['domain_id'] is not None:
+            dom = conn.execute(
+                'SELECT id FROM domains WHERE id = ?', (folder['domain_id'],)
+            ).fetchone()
+            if dom:
+                effective_public = 1
+                effective_domain = dom['id']
     conn.execute(
-        'UPDATE folders SET name = ?, description = ?, parent_id = ?, is_public = ? WHERE id = ?',
-        (name, description, parent_id, is_public, folder_id),
+        'UPDATE folders SET name = ?, description = ?, parent_id = ?, is_public = ?, domain_id = ? WHERE id = ?',
+        (name, description, parent_id, effective_public, effective_domain, folder_id),
     )
+    # Folder is the source of truth for foldered content: cascade the resulting
+    # visibility (including any unpublish caused by losing the domain above) to
+    # every descendant folder and topic.
+    _cascade_folder_visibility(conn, folder_id, effective_public, effective_domain)
     conn.commit()
     conn.close()
-    return redirect(url_for('domain', domain_id=folder['domain_id']))
+    return redirect(url_for('domain', domain_id=folder['domain_id']) if folder['domain_id'] else url_for('personal_space'))
 
 @app.route('/delete_folder/<int:folder_id>', methods=['POST'])
 @login_required
@@ -3043,9 +3218,14 @@ def duplicate_public_topic(topic_id):
         flash('This topic is not available to copy')
         return redirect(request.referrer or url_for('all_domains'))
     try:
-        # Deep-copy the whole tree; _copy_topic preserves the source folder_id
-        # and authors, both of which we override below for the new owner.
+        # Deep-copy the whole tree; _copy_topic preserves the source folder_id and
+        # authors. A foldered public topic is copied LOOSE so the duplicate lands in
+        # the duplicator's personal space, not inside the original folder; we clear
+        # its folder_id below when the source was foldered. Authors are overridden
+        # for the new owner after the copy.
         new_topic_id = _copy_topic(conn, src)
+        if src['folder_id'] is not None:
+            conn.execute('UPDATE topics SET folder_id = NULL WHERE id = ?', (new_topic_id,))
         new_authors = append_author(src['authors'], uid)
         conn.execute(
             'UPDATE topics SET user_id = ?, is_public = 0, domain_id = NULL, authors = ? '
@@ -3149,19 +3329,31 @@ def duplicate_folder(folder_id):
         domain_id = folder['domain_id']
 
         def copy_subtree(old_fid, new_parent_id):
-            """Recursively copy a folder and its whole subtree, parent before child."""
+            """Recursively copy a folder and its whole subtree, parent before child.
+
+            The duplicate is a private personal copy of the source (owned by the
+            duplicating user, no domain_id, is_public=0); foldered visibility is
+            derived from the folder, so the copied subtree inherits its privacy.
+            """
             src = conn.execute('SELECT * FROM folders WHERE id = ?', (old_fid,)).fetchone()
             cursor = conn.execute(
                 "INSERT INTO folders (domain_id, parent_id, name, description, user_id, created_at) "
                 "VALUES (?, ?, 'Copy of ' || ?, ?, ?, ?)",
-                (domain_id, new_parent_id, src['name'], src['description'], src['user_id'], src['created_at']),
+                (None, new_parent_id, src['name'], src['description'], g.user['id'], src['created_at']),
             )
             new_fid = cursor.lastrowid
             src_topics = conn.execute(
                 'SELECT * FROM topics WHERE folder_id = ?', (old_fid,)
             ).fetchall()
             for src_topic in src_topics:
-                _copy_topic(conn, src_topic, new_fid)
+                # _copy_topic preserves folder_id and authors; we override the
+                # folder so the copy lands inside the new (private) subtree and
+                # strip its publish state.
+                new_tid = _copy_topic(conn, src_topic, new_fid)
+                conn.execute(
+                    'UPDATE topics SET user_id = ?, is_public = 0, domain_id = NULL WHERE id = ?',
+                    (g.user['id'], new_tid),
+                )
             children = conn.execute(
                 'SELECT id FROM folders WHERE parent_id = ?', (old_fid,)
             ).fetchall()
@@ -3196,22 +3388,31 @@ def update_topic():
         conn.close()
         flash('Topic not found')
         return redirect(request.referrer or url_for('all_domains'))
-    # New publish model: a topic keeps its domain_id only while public. Toggling
-    # public off via the edit modal strips the domain (returns to personal space);
-    # toggling on without an explicit publish re-attaches the prior domain if it
-    # still exists, otherwise the owner must use the publish action to pick one.
-    if is_public:
-        domain_id = topic['domain_id']
-        if domain_id is not None:
-            dom = conn.execute('SELECT id FROM domains WHERE id = ?', (domain_id,)).fetchone()
-            if not dom:
-                domain_id = None
+    # A foldered topic's visibility is DERIVED from its parent folder and is not
+    # user-editable here: ignore any is_public/domain_id from the form and keep the
+    # folder-derived values unchanged.
+    if topic['folder_id'] is not None:
+        conn.execute(
+            'UPDATE topics SET name = ?, description = ? WHERE id = ?',
+            (name, description, topic_id),
+        )
     else:
-        domain_id = None
-    conn.execute(
-        'UPDATE topics SET name = ?, description = ?, is_public = ?, domain_id = ? WHERE id = ?',
-        (name, description, is_public, domain_id, topic_id),
-    )
+        # New publish model: a topic keeps its domain_id only while public. Toggling
+        # public off via the edit modal strips the domain (returns to personal space);
+        # toggling on without an explicit publish re-attaches the prior domain if it
+        # still exists, otherwise the owner must use the publish action to pick one.
+        if is_public:
+            domain_id = topic['domain_id']
+            if domain_id is not None:
+                dom = conn.execute('SELECT id FROM domains WHERE id = ?', (domain_id,)).fetchone()
+                if not dom:
+                    domain_id = None
+        else:
+            domain_id = None
+        conn.execute(
+            'UPDATE topics SET name = ?, description = ?, is_public = ?, domain_id = ? WHERE id = ?',
+            (name, description, is_public, domain_id, topic_id),
+        )
     conn.commit()
     conn.close()
     return redirect(request.referrer or url_for('all_domains'))
@@ -3238,6 +3439,12 @@ def publish_topic(topic_id):
         conn.close()
         flash('Choose a domain to publish into')
         return redirect(url_for('topic', topic_id=topic_id))
+    # Foldered topics are controlled by their folder: visibility is derived from
+    # the parent folder and cannot be set directly. Reject direct publish.
+    if topic['folder_id'] is not None:
+        conn.close()
+        flash('This topic is inside a folder; publish the folder instead')
+        return redirect(url_for('topic', topic_id=topic_id))
     conn.execute(
         'UPDATE topics SET is_public = 1, domain_id = ? WHERE id = ?',
         (domain['id'], topic_id),
@@ -3262,10 +3469,99 @@ def unpublish_topic(topic_id):
         conn.close()
         flash('Topic not found')
         return redirect(request.referrer or url_for('all_domains'))
+    # Foldered topics are controlled by their folder: unpublishing happens at the
+    # folder level. Reject direct unpublish of a foldered topic.
+    if topic['folder_id'] is not None:
+        conn.close()
+        flash('This topic is inside a folder; unpublish the folder instead')
+        return redirect(url_for('topic', topic_id=topic_id))
     conn.execute('UPDATE topics SET is_public = 0, domain_id = NULL WHERE id = ?', (topic_id,))
     conn.commit()
     conn.close()
     return redirect(url_for('topic', topic_id=topic_id))
+
+
+def _cascade_folder_visibility(conn, folder_id, is_public, domain_id):
+    """Apply a folder's visibility to every descendant folder and topic.
+
+    The folder is the source of truth for foldered content: publishing/unpublishing
+    the folder cascades the same is_public/domain_id to all nested folders and every
+    topic hanging anywhere under the subtree.
+    """
+    folder_ids, topic_ids = get_folder_subtree(conn, folder_id)
+    # Include the root folder itself in the cascade.
+    all_folder_ids = set(folder_ids) | {folder_id}
+    if all_folder_ids:
+        placeholders = ','.join('?' * len(all_folder_ids))
+        conn.execute(
+            f'UPDATE folders SET is_public = ?, domain_id = ? WHERE id IN ({placeholders})',
+            [is_public, domain_id] + list(all_folder_ids),
+        )
+    if topic_ids:
+        placeholders = ','.join('?' * len(topic_ids))
+        conn.execute(
+            f'UPDATE topics SET is_public = ?, domain_id = ? WHERE id IN ({placeholders})',
+            [is_public, domain_id] + topic_ids,
+        )
+
+
+@app.route('/publish_folder/<int:folder_id>', methods=['POST'])
+@login_required
+def publish_folder(folder_id):
+    """Publish a folder into a domain, cascading to its whole subtree.
+
+    Sets the folder is_public=1 and domain_id=<chosen>, then cascades the same
+    visibility onto every descendant folder and topic. Foldered topics are
+    controlled here, not individually.
+    """
+    domain_id = request.form.get('domain_id')
+    conn = get_db()
+    folder = conn.execute('SELECT f.* FROM folders f WHERE f.id = ?', (folder_id,)).fetchone()
+    if not folder or folder['user_id'] != g.user['id']:
+        conn.close()
+        flash('Folder not found')
+        return redirect(request.referrer or url_for('all_domains'))
+    if not domain_id:
+        conn.close()
+        flash('Choose a domain to publish this folder into')
+        return redirect(url_for('domain', domain_id=folder['domain_id']) if folder['domain_id'] else url_for('personal_space'))
+    domain = conn.execute('SELECT id FROM domains WHERE id = ?', (domain_id,)).fetchone()
+    if not domain:
+        conn.close()
+        flash('Domain not found')
+        return redirect(url_for('domain', domain_id=folder['domain_id']) if folder['domain_id'] else url_for('personal_space'))
+    try:
+        _cascade_folder_visibility(conn, folder_id, 1, domain['id'])
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        flash('Could not publish this folder')
+        return redirect(url_for('domain', domain_id=folder['domain_id']) if folder['domain_id'] else url_for('personal_space'))
+    conn.close()
+    return redirect(url_for('domain', domain_id=domain['id']))
+
+
+@app.route('/unpublish_folder/<int:folder_id>', methods=['POST'])
+@login_required
+def unpublish_folder(folder_id):
+    """Unpublish a folder, cascading back to personal space across the subtree."""
+    conn = get_db()
+    folder = conn.execute('SELECT f.* FROM folders f WHERE f.id = ?', (folder_id,)).fetchone()
+    if not folder or folder['user_id'] != g.user['id']:
+        conn.close()
+        flash('Folder not found')
+        return redirect(request.referrer or url_for('all_domains'))
+    try:
+        _cascade_folder_visibility(conn, folder_id, 0, None)
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        flash('Could not unpublish this folder')
+        return redirect(url_for('domain', domain_id=folder['domain_id']) if folder['domain_id'] else url_for('personal_space'))
+    conn.close()
+    return redirect(url_for('personal_space'))
 
 
 @app.route('/delete_topic/<int:topic_id>', methods=['POST'])
@@ -3591,7 +3887,9 @@ def account_import():
         folder_id_map = {}
         for f in folders:
             domain_id = f.get('domain_id')
-            if domain_id not in valid_domains:
+            # Private (personal) folders have a NULL domain_id, which is valid and
+            # must be restored as-is rather than dropped.
+            if domain_id is not None and domain_id not in valid_domains:
                 continue
             parent_old = f.get('parent_id')
             cursor.execute('''
@@ -3610,7 +3908,9 @@ def account_import():
         topic_id_map = {}
         for t in topics:
             domain_id = t.get('domain_id')
-            if domain_id not in valid_domains:
+            # A NULL domain_id is a private (personal) topic and is valid; only a
+            # non-NULL domain that no longer exists is dropped.
+            if domain_id is not None and domain_id not in valid_domains:
                 continue
             folder_old = t.get('folder_id')
             cursor.execute('''

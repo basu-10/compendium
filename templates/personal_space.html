@@ -126,7 +126,6 @@
                 </a>
                 <div class="hover-actions" onclick="event.stopPropagation();">
                     <button type="button" class="icon-btn edit-btn" onclick="openModal('{{ t_edit_modal_id }}'); event.stopPropagation();" title="Rename" aria-label="Rename">✎</button>
-                    <button type="button" class="icon-btn publish-btn" onclick="openModal('ps-publish-topic-{{ t.id }}'); event.stopPropagation();" title="Make public" aria-label="Make public">🌐</button>
                     <button type="button" class="icon-btn move-btn" onclick="openModal('{{ t_move_modal_id }}'); event.stopPropagation();" title="Move to folder" aria-label="Move to folder">⇄</button>
                     <form method="POST" action="{{ url_for('duplicate_topic', topic_id=t.id) }}" style="display:inline;" onsubmit="event.stopPropagation();">
                         <button type="submit" class="icon-btn duplicate-btn" onclick="event.stopPropagation();" title="Duplicate" aria-label="Duplicate">⧉</button>
@@ -144,8 +143,6 @@
                 {% set topic_id = t.id %}
                 {% set current_folder_id = t.folder_id %}
                 {% include "modals/move_topic.html" with context %}
-                {% set modal_id = 'ps-publish-topic-' ~ t.id %}
-                {% include "modals/publish_topic.html" with context %}
             </div>
             {% endfor %}
         </div>
@@ -259,9 +256,6 @@
                 </a>
                 <div class="hover-actions" onclick="event.stopPropagation();">
                     <button type="button" class="icon-btn edit-btn" onclick="openModal('{{ t_edit_modal_id }}'); event.stopPropagation();" title="Rename" aria-label="Rename">✎</button>
-                    <form method="POST" action="{{ url_for('unpublish_topic', topic_id=t.id) }}" style="display:inline;" onsubmit="event.stopPropagation();">
-                        <button type="submit" class="icon-btn unpublish-btn" onclick="event.stopPropagation();" title="Make private" aria-label="Make private">🔒</button>
-                    </form>
                     <button type="button" class="icon-btn move-btn" onclick="openModal('{{ t_move_modal_id }}'); event.stopPropagation();" title="Move to folder" aria-label="Move to folder">⇄</button>
                     <form method="POST" action="{{ url_for('duplicate_topic', topic_id=t.id) }}" style="display:inline;" onsubmit="event.stopPropagation();">
                         <button type="submit" class="icon-btn duplicate-btn" onclick="event.stopPropagation();" title="Duplicate" aria-label="Duplicate">⧉</button>
@@ -297,5 +291,27 @@
 .topic-card-link { display: block; text-decoration: none; color: inherit; }
 .ps-topic-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; position: relative; }
 .ps-topic-row .topic-card-link { flex: 1; min-width: 0; }
+/* Keep card text clear of the overlaid hover toolbar so it reflows rather than
+   sliding underneath the buttons. */
+.topic-card .topic-card-name,
+.topic-card .topic-card-desc,
+.topic-card .topic-card-meta,
+.topic-card-summary .topic-card-name,
+.topic-card-summary .topic-card-desc,
+.topic-card-summary .topic-card-meta,
+.ps-topic-row .topic-card-name,
+.ps-topic-row .topic-card-desc,
+.ps-topic-row .topic-card-meta { padding-right: 11rem; }
+@media (max-width: 640px) {
+    .topic-card .topic-card-name,
+    .topic-card .topic-card-desc,
+    .topic-card .topic-card-meta,
+    .topic-card-summary .topic-card-name,
+    .topic-card-summary .topic-card-desc,
+    .topic-card-summary .topic-card-meta,
+    .ps-topic-row .topic-card-name,
+    .ps-topic-row .topic-card-desc,
+    .ps-topic-row .topic-card-meta { padding-right: 0; }
+}
 </style>
 {% endblock %}

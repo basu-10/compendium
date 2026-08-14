@@ -2382,6 +2382,12 @@ p {
 .evidence-card:hover .hover-actions,
 .card:hover .hover-actions,
 .accordion-statement:hover .hover-actions,
+/* Personal space cards (folder cards and topic rows) reveal their toolbar on
+   hover/focus so the on-hover management buttons actually appear there. */
+.topic-card:hover .hover-actions,
+.folder-card:hover .hover-actions,
+.topic-card-summary:hover .hover-actions,
+.ps-topic-row:hover .hover-actions,
 .hover-actions:focus-within,
 .hover-actions.touch-visible {
     opacity: 1;
@@ -4804,6 +4810,7 @@ body.theme-modern { --plyr-color-main: #4f46e5; }
 }
 .topic-card {
     display: block;
+    position: relative;
     padding: 0.9rem 1rem;
     border: 1px solid var(--border, #e3e8f0);
     border-radius: 10px;
@@ -4815,6 +4822,30 @@ body.theme-modern { --plyr-color-main: #4f46e5; }
 .topic-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+}
+/* The folder-card also drives a <details>; keep its summary positioned so the
+   hover toolbar can overlay the top-right corner without affecting the text. */
+.folder-card,
+.topic-card-summary {
+    position: relative;
+}
+/* Overlay the management toolbar on the card's top-right corner on hover/focus
+   instead of taking layout width, so it never squashes the title/description
+   and lets the text reflow around it. */
+.topic-card .hover-actions,
+.folder-card > .topic-card-summary .hover-actions,
+.ps-topic-row .hover-actions {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.6rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 70%;
+}
+/* Leave clearance so the padded card text never runs under the toolbar. */
+.topic-card,
+.topic-card-summary {
+    padding-right: 1rem;
 }
 .topic-card-name {
     font-weight: 600;

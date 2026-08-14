@@ -2460,55 +2460,52 @@ p {
     flex-wrap: wrap;
 }
 
-/* Visitor-facing "Download this topic" menu: a details/summary dropdown styled
-   to look like a secondary button so it reads as one control. Available to
+/* Visitor-facing "Download this topic" button + confirmation modal. Available to
    everyone (including logged-out visitors) — distinct from the account
    export/import in Settings, which operates on a whole logged-in account. */
 .topic-download {
     flex-shrink: 0;
 }
 
-.download-menu {
-    position: relative;
+.download-modal {
+    max-width: 32rem;
 }
 
-.download-menu > summary {
-    list-style: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
+.download-modal p {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin: 0.25rem 0 0.9rem;
 }
 
-.download-menu > summary::-webkit-details-marker {
-    display: none;
+.download-modal code {
+    background-color: var(--bg-muted);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    font-size: 0.85em;
 }
 
-.download-menu-items {
-    position: absolute;
-    right: 0;
-    top: calc(100% + 0.4rem);
-    z-index: 30;
-    min-width: 11rem;
-    display: flex;
-    flex-direction: column;
-    background-color: var(--bg-surface);
+.download-modal .download-tree {
+    background-color: var(--bg-muted);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    box-shadow: 0 8px 24px -8px rgba(15, 23, 42, 0.25);
-    overflow: hidden;
-}
-
-.download-menu-items a {
-    padding: 0.6rem 0.9rem;
+    padding: 0.9rem 1rem;
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+    font-size: 0.78rem;
+    line-height: 1.55;
+    overflow-x: auto;
+    white-space: pre;
     color: var(--text-secondary);
-    text-decoration: none;
-    font-size: 0.85rem;
-    font-weight: 500;
+    margin: 0 0 1.1rem;
 }
 
-.download-menu-items a:hover {
-    background-color: var(--bg-muted);
+.download-tree .dt-folder {
     color: var(--text-primary);
+    font-weight: 600;
+}
+
+.download-tree .dt-note {
+    color: var(--text-muted, #94a3b8);
+    font-style: italic;
 }
 
 .topic-title-group {

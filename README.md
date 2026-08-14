@@ -20,8 +20,13 @@ breadcrumb navigation.
   breakdown.
   - **Landing / about pages** plus an "all domains" directory.
   - **Topic download** — any visitor (including logged-out) can export a single
-    public topic as Markdown, HTML, or JSON from the topic page header. This is
-    separate from the account-wide export/import in Settings.
+    public topic as a `.zip` from the topic page header. The archive is laid out
+    as a folder tree: a root folder named after the topic containing `topic.md`
+    (full title + description) and one sub-folder per statement (each with
+    `statement.md` plus every attachment as its own file: rich text → `.html`,
+    links → `.txt`, tables → original file / `.csv` when inline, images/videos/
+    documents → original file unchanged). This is separate from the account-wide
+    export/import in Settings.
 - **SQLite persistence** with auto-migration and seed data on first run.
 
 ## Project Structure

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory, jsonify, session, g
+from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory, send_file, jsonify, session, g
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import os
@@ -1562,6 +1562,12 @@ def topic(topic_id):
         topic_authors=topic_authors,
         topic_domain_id=topic_domain_id,
         topic_domain_name=topic_domain_name,
+        download_tree=topic_download_tree({
+            'topic': topic,
+            'statements': statements,
+            'attachments': attachments,
+            'owner_username': owner_name,
+        }),
     )
 
 @app.route('/create_topic', methods=['POST'])
@@ -3811,107 +3817,209 @@ def _topic_download_data(conn, topic_id):
     }
 
 
-def _topic_download_markdown(data):
-    """Render a topic snapshot as clean, human-readable Markdown."""
-    topic = data['topic']
-    out = []
-    out.append('# ' + (topic['name'] or 'Untitled topic'))
-    out.append('')
-    if topic.get('domain_name'):
-        out.append('*Domain:* ' + topic['domain_name'])
-    out.append('*Author:* ' + data['owner_username'])
-    if topic.get('description'):
-        out.append('')
-        out.append(topic['description'])
-    out.append('')
-    for stmt in data['statements']:
-        out.append('## ' + (stmt['text'] or ''))
-        out.append('')
-        atts = [a for a in data['attachments'] if a['statement_id'] == stmt['id']]
-        if not atts:
-            out.append('_No evidence attached._')
-            out.append('')
-            continue
-        for att in atts:
-            out.append('- **' + (att['title'] or 'Untitled') + '** '
-                       + '(' + att['type'] + ')')
-            if att['type'] in CONTENT_ONLY_TYPES:
-                body = (att['content'] or '').strip()
-                if body:
-                    # Indent the body under the bullet for readability.
-                    for line in body.splitlines() or [body]:
-                        out.append('    ' + line)
-            elif att.get('source_url'):
-                out.append('    ' + att['source_url'])
-            elif att.get('filename'):
-                out.append('    ' + att['filename'])
-        out.append('')
-    return '\n'.join(out)
+def _sanitize_folder_name(name, max_len=60):
+    """Turn arbitrary text into a safe, filesystem-friendly folder name.
+
+    Collapses whitespace/illegal characters to a single dash and truncates so the
+    resulting path cannot blow past filesystem limits. Kept short and ASCII so the
+    archive extracts cleanly on Windows/macOS/Linux.
+    """
+    cleaned = re.sub(r'[\\/:*?"<>|]+', '-', name or '').strip()
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    cleaned = cleaned.strip(' ._-')
+    if not cleaned:
+        cleaned = 'untitled'
+    return cleaned[:max_len].rstrip(' ._-') or 'untitled'
 
 
-def _topic_download_html(data):
-    """Render a topic snapshot as a standalone, self-contained HTML document."""
+def _unique_member(path, seen):
+    """Return a unique archive path for `path`, de-duplicating within `seen`."""
+    if path not in seen:
+        seen.add(path)
+        return path
+    base, ext = os.path.splitext(path)
+    i = 2
+    while f'{base}-{i}{ext}' in seen:
+        i += 1
+    unique = f'{base}-{i}{ext}'
+    seen.add(unique)
+    return unique
+
+
+def _asset_extension(att):
+    """Pick the on-disk file extension for an attachment inside the zip.
+
+    Content-only kinds (link/text/richtext) become text files. File-backed kinds
+    (image/video/document, and tables that were uploaded as a file) keep their
+    real extension unchanged. A table *without* an uploaded file is stored as
+    inline CSV text, so it gets .csv.
+    """
+    if att['type'] == 'link':
+        return '.txt'
+    if att['type'] in ('text', 'richtext'):
+        return '.html'
+    fname = att.get('filename')
+    if att['type'] == 'table':
+        # File-backed table (csv/tsv/xls/xlsx/ods): keep the original file as-is.
+        # Inline (no file) means the body is CSV text, so emit .csv.
+        if fname and '.' in fname:
+            return '.' + fname.rsplit('.', 1)[1].lower()
+        return '.csv'
+    if fname and '.' in fname:
+        return '.' + fname.rsplit('.', 1)[1].lower()
+    return ''
+
+
+def _asset_bytes(att, upload_dir):
+    """Resolve the byte payload for an attachment.
+
+    - link: the URL text stored in `content`.
+    - text/richtext: the HTML stored in `content` (written as .html).
+    - table: CSV text. If the row is file-backed (.csv/.tsv/.xls/.xlsx/.ods) the
+      original uploaded file is bundled unchanged; otherwise the inline `content`
+      (CSV text) is used directly.
+    - image/video/document: the original uploaded file is copied unchanged.
+    Returns (bytes, source_path_or_None). source_path is set only when a file was
+    read from disk (so callers can skip a missing file gracefully).
+    """
+    if att['type'] == 'link':
+        return (att['content'] or '').encode('utf-8'), None
+    if att['type'] in ('text', 'richtext'):
+        return (att['content'] or '').encode('utf-8'), None
+    fname = att.get('filename')
+    if not fname:
+        # No file and not a content-only kind: best-effort dump of whatever is in
+        # `content` (e.g. an inline table stored as CSV text).
+        return (att['content'] or '').encode('utf-8'), None
+    src = os.path.join(upload_dir, fname)
+    if not os.path.isfile(src):
+        # Missing on disk: fall back to any inline content we have.
+        return (att['content'] or '').encode('utf-8'), None
+    with open(src, 'rb') as fh:
+        return fh.read(), src
+
+
+def topic_download_zip(data):
+    """Build an in-memory .zip of a topic in a reader-friendly folder layout.
+
+    Layout:
+        <topic-name>/
+            topic.md            # full title + description (+ domain/author)
+            <statement-1>/      # one folder per statement
+                statement.md    # the statement text in full
+                <asset-1>.<ext> # each attachment as its own file
+                ...
+            <statement-2>/
+                ...
+
+    Asset extensions: link→.txt (URL), richtext/text→.html (the stored body),
+    table→.csv, image/video/document→original file unchanged. No new dependencies:
+    only zipfile/io/os/re, so it runs unchanged on the production host.
+    """
     topic = data['topic']
-    esc = lambda s: (s or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-    parts = []
-    parts.append('<!DOCTYPE html>')
-    parts.append('<html lang="en"><head><meta charset="utf-8">')
-    parts.append('<title>' + esc(topic['name']) + ' - Compendium</title>')
-    parts.append('<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;'
-                 'max-width:760px;margin:2rem auto;padding:0 1rem;line-height:1.6;color:#1a1a1a}'
-                 'h1{border-bottom:2px solid #e2e8f0;padding-bottom:.3rem}'
-                 'h2{margin-top:1.8rem}small{color:#64748b}'
-                 'ul{margin:.4rem 0}.evidence{background:#f8fafc;border:1px solid #e2e8f0;'
-                 'border-radius:8px;padding:.3rem .9rem;margin:.4rem 0}.muted{color:#94a3b8}'
-                 '</style></head><body>')
-    parts.append('<h1>' + esc(topic['name']) + '</h1>')
-    meta = []
+    uploads = app.config['UPLOAD_FOLDER']
+
+    root = _sanitize_folder_name(topic['name'])
+    # Keep a single `seen` namespace across the whole archive for de-duping.
+    seen = set()
+    root_path = _unique_member(root, seen)
+
+    # topic.md: full title + description, with a small metadata header.
+    md_lines = ['# ' + (topic['name'] or 'Untitled topic'), '']
     if topic.get('domain_name'):
-        meta.append('Domain: ' + esc(topic['domain_name']))
-    meta.append('Author: ' + esc(data['owner_username']))
-    if meta:
-        parts.append('<p><small>' + ' &middot; '.join(meta) + '</small></p>')
+        md_lines.append('*Domain:* ' + topic['domain_name'])
+    md_lines.append('*Author:* ' + data['owner_username'])
+    md_lines.append('')
     if topic.get('description'):
-        parts.append('<p>' + esc(topic['description']) + '</p>')
-    for stmt in data['statements']:
-        parts.append('<h2>' + esc(stmt['text']) + '</h2>')
-        atts = [a for a in data['attachments'] if a['statement_id'] == stmt['id']]
-        if not atts:
-            parts.append('<p class="muted">No evidence attached.</p>')
-            continue
-        parts.append('<ul>')
-        for att in atts:
-            parts.append('<li><div class="evidence"><strong>' + esc(att['title'] or 'Untitled')
-                         + '</strong> <small class="muted">(' + esc(att['type']) + ')</small>')
-            if att['type'] in CONTENT_ONLY_TYPES:
-                body = (att['content'] or '').strip()
-                if body:
-                    parts.append('<div>' + esc(body) + '</div>')
-            elif att.get('source_url'):
-                parts.append('<div><a href="' + esc(att['source_url']) + '">'
-                             + esc(att['source_url']) + '</a></div>')
-            elif att.get('filename'):
-                parts.append('<div class="muted">' + esc(att['filename']) + '</div>')
-            parts.append('</div></li>')
-        parts.append('</ul>')
-    parts.append('<hr><p class="muted">Exported from Compendium.</p>')
-    parts.append('</body></html>')
-    return '\n'.join(parts)
+        md_lines.append(topic['description'])
+        md_lines.append('')
+    mem = io.BytesIO()
+    with zipfile.ZipFile(mem, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(_unique_member(os.path.join(root_path, 'topic.md'), seen),
+                    '\n'.join(md_lines).encode('utf-8'))
+
+        for idx, stmt in enumerate(data['statements'], start=1):
+            stmt_folder = _sanitize_folder_name(stmt['text'] or f'statement-{idx}')
+            stmt_path = _unique_member(
+                os.path.join(root_path, f'{idx:02d}-{stmt_folder}'), seen)
+
+            zf.writestr(
+                _unique_member(os.path.join(stmt_path, 'statement.md'), seen),
+                (stmt['text'] or '').encode('utf-8'),
+            )
+            for att in [a for a in data['attachments']
+                        if a['statement_id'] == stmt['id']]:
+                ext = _asset_extension(att)
+                base = _sanitize_folder_name(att['title'] or f'asset-{att["id"]}')
+                arc_name = _unique_member(
+                    os.path.join(stmt_path, base + ext), seen)
+                try:
+                    payload, _src = _asset_bytes(att, uploads)
+                except OSError:
+                    logger.warning('download zip: skipped unreadable asset %s', att.get('id'))
+                    continue
+                if payload:
+                    zf.writestr(arc_name, payload)
+    mem.seek(0)
+    return mem
+
+
+def topic_download_tree(data):
+    """Describe the planned archive as a nested dict, for the preview modal.
+
+    Mirrors the exact naming/de-dup logic used by `topic_download_zip` so the
+    modal's tree preview reflects the real statement/asset names (not a fixed
+    example). Returns:
+        {
+          'root': <safe topic folder name>,
+          'topic_md': 'topic.md',
+          'statements': [
+             {'folder': <safe folder name>, 'text': <raw statement text>,
+              'assets': [<safe asset file name>, ...]}, ...
+          ]
+        }
+    """
+    # Normalize sqlite3.Row / dict inputs so the same helper works whether it is
+    # fed raw DB rows (from the topic page) or plain dicts (from _topic_download_data).
+    norm = lambda r: dict(r) if not isinstance(r, dict) else r
+    topic = norm(data['topic'])
+    atts = [norm(a) for a in data['attachments']]
+    stmts = [norm(s) for s in data['statements']]
+    seen = set()
+    root = _unique_member(_sanitize_folder_name(topic['name']), seen)
+    statements = []
+    for idx, stmt in enumerate(stmts, start=1):
+        stmt_folder = _unique_member(
+            f'{idx:02d}-' + _sanitize_folder_name(stmt['text'] or f'statement-{idx}'),
+            seen,
+        )
+        assets = []
+        for att in [a for a in atts if a['statement_id'] == stmt['id']]:
+            ext = _asset_extension(att)
+            base = _sanitize_folder_name(att['title'] or f'asset-{att["id"]}')
+            assets.append(_unique_member(base + ext, seen))
+        statements.append({
+            'folder': stmt_folder,
+            'text': stmt['text'] or '',
+            'assets': assets,
+        })
+    return {
+        'root': root,
+        'topic_md': _unique_member('topic.md', seen),
+        'statements': statements,
+    }
 
 
 @app.route('/topic/<int:topic_id>/download')
 def topic_download(topic_id):
-    """Stream a single public topic as a visitor-readable file.
+    """Stream a single topic as a visitor-readable .zip.
 
     Separate from /account/export: that dumps a logged-in user's whole account,
     whereas this lets *anyone* (including logged-out visitors) grab one topic's
-    content without an account. `format` accepts `md` (default), `html`, or
-    `json`. Access mirrors the topic page: only the owner or a public topic is
-    reachable.
+    content without an account, laid out as a folder tree (topic.md + one folder
+    per statement holding statement.md and each asset as its own file). Access
+    mirrors the topic page: only the owner or a public topic is reachable.
     """
-    fmt = (request.args.get('format') or 'md').lower()
-    if fmt not in ('md', 'html', 'json'):
-        fmt = 'md'
     conn = get_db()
     try:
         data = _topic_download_data(conn, topic_id)
@@ -3927,30 +4035,14 @@ def topic_download(topic_id):
         flash('This topic is private')
         return redirect(url_for('all_domains'))
 
-    safe_name = re.sub(r'[^a-z0-9_-]+', '-', (topic['name'] or 'topic').lower()).strip('-')
+    safe_name = _sanitize_folder_name(topic['name'])
     stamp = datetime.now().strftime('%Y%m%d')
-    if fmt == 'json':
-        payload = json.dumps(data, default=str, indent=2)
-        return send_file(
-            io.BytesIO(payload.encode('utf-8')),
-            mimetype='application/json',
-            as_attachment=True,
-            download_name=f'{safe_name}-{stamp}.json',
-        )
-    if fmt == 'html':
-        body = _topic_download_html(data)
-        return send_file(
-            io.BytesIO(body.encode('utf-8')),
-            mimetype='text/html',
-            as_attachment=True,
-            download_name=f'{safe_name}-{stamp}.html',
-        )
-    body = _topic_download_markdown(data)
+    mem = topic_download_zip(data)
     return send_file(
-        io.BytesIO(body.encode('utf-8')),
-        mimetype='text/markdown',
+        mem,
+        mimetype='application/zip',
         as_attachment=True,
-        download_name=f'{safe_name}-{stamp}.md',
+        download_name=f'{safe_name}-{stamp}.zip',
     )
 
 

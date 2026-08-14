@@ -2563,6 +2563,7 @@ def build_folder_tree(conn, folders, topic_vis='', topic_params=None, topics_by_
             'name': f['name'],
             'description': f['description'],
             'is_public': f['is_public'],
+            'user_id': f['user_id'],
             'children': [],
             'topics': [],
             'statement_count': 0,

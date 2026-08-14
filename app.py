@@ -2801,14 +2801,22 @@ def api_scrape_preview():
     if not url:
         return jsonify({'ok': False, 'error': 'url is required'}), 400
 
-    # The on-site tab only has the URL; fetch it server-side.
+    # The on-site tab normally sends raw HTML from a browser-side fetch. If it
+    # couldn't (CORS/network) we fall back to fetching server-side, but note that
+    # some hosts are unreachable from the deployment proxy (e.g. pythonanywhere
+    # whitelist), which surfaces as a 403/tunnel error below.
     if not html:
         try:
             resp = requests.get(url, timeout=15, headers={'User-Agent': 'Mozilla/5.0 (compatible; CompendiumCapture/1.0)'})
             resp.raise_for_status()
             html = resp.text
         except Exception as e:
-            return jsonify({'ok': False, 'error': f'Could not fetch URL: {e}'}), 502
+            msg = str(e)
+            if 'ProxyError' in msg or '403' in msg or 'Tunnel' in msg:
+                msg = ('Could not fetch URL from the server: the deployment proxy '
+                       'blocked this host. Try a different site, or use the browser '
+                       'extension to capture the page.')
+            return jsonify({'ok': False, 'error': f'Could not fetch URL: {msg}'}), 502
 
     try:
         source_title, composed = _build_capture(title, url, html)
@@ -2846,7 +2854,12 @@ def api_capture():
             resp.raise_for_status()
             html = resp.text
         except Exception as e:
-            return jsonify({'ok': False, 'error': f'Could not fetch URL: {e}'}), 502
+            msg = str(e)
+            if 'ProxyError' in msg or '403' in msg or 'Tunnel' in msg:
+                msg = ('Could not fetch URL from the server: the deployment proxy '
+                       'blocked this host. Try a different site, or use the browser '
+                       'extension to capture the page.')
+            return jsonify({'ok': False, 'error': f'Could not fetch URL: {msg}'}), 502
 
     source_title, composed = _build_capture(title, url, html)
     # 5. Insert as richtext attachment with source_url

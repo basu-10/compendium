@@ -19,10 +19,26 @@ export function initAttachScrape(root, statementId, tabsApi) {
         if (scrapeStatus) scrapeStatus.textContent = '';
 
         try {
+            // Fetch the page in the browser so we avoid the server-side
+            // deployment proxy (pythonanywhere only whitelists a few hosts,
+            // returning 403 for everything else). We send the raw HTML to the
+            // server, which already skips fetching when `html` is provided.
+            let html = '';
+            try {
+                const pageResp = await fetch(url, { redirect: 'follow' });
+                if (!pageResp.ok) {
+                    throw new Error(`Page returned ${pageResp.status}`);
+                }
+                html = await pageResp.text();
+            } catch (fetchErr) {
+                if (scrapeStatus) scrapeStatus.textContent = `Could not fetch URL in browser (CORS or network): ${fetchErr.message}`;
+                return;
+            }
+
             const response = await fetch('/api/scrape_preview', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url })
+                body: JSON.stringify({ url, html })
             });
 
             const data = await response.json();

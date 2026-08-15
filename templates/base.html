@@ -409,9 +409,17 @@
             }
 
             // API Token management
+            // Pre-generate API token endpoint URLs
+            const API_TOKEN_URLS = {
+                status: "{{ url_for('api_token_status') }}",
+                generate: "{{ url_for('api_token_generate') }}",
+                regenerate: "{{ url_for('api_token_regenerate') }}",
+                revoke: "{{ url_for('api_token_revoke') }}"
+            };
+
             async function loadToken() {
                 try {
-                    const resp = await fetch("{{ url_for('api_token_status') }}");
+                    const resp = await fetch(API_TOKEN_URLS.status);
                     const data = await resp.json();
                     const input = document.getElementById('api-token-input');
                     const copyBtn = document.getElementById('token-copy-btn');
@@ -453,7 +461,7 @@
                 btn.textContent = action === 'revoke' ? 'Revoking…' : 'Generating…';
                 
                 try {
-                    const resp = await fetch("{{ url_for('api_token_' + action) }}", { method: 'POST' });
+                    const resp = await fetch(API_TOKEN_URLS[action], { method: 'POST' });
                     const data = await resp.json();
                     
                     if (data.ok) {

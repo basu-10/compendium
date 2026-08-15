@@ -1433,25 +1433,41 @@ async function quickAddFromClipboard(statementId, mode) {
 
 function captureFromUrl(statementId, url) {
     flashMessage('Scraping ' + url + ' …');
-    fetch('/api/capture', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-        body: JSON.stringify({ statement_id: statementId, url: url })
-    }).then(function(r) { return r.json(); }).then(function(data) {
-        if (!data || !data.ok) {
-            flashMessage('Could not scrape URL: ' + ((data && data.error) || 'unknown error'));
-            return;
-        }
-        if (typeof evidenceData !== 'undefined') {
-            const sid = String(statementId);
-            // Refresh from the server so the new richtext card renders with full data.
-            const params = new URLSearchParams(window.location.search);
-            params.set('stmt', sid);
-            window.location.search = params.toString() ? '?' + params.toString() : '';
-        }
-    }).catch(function() {
-        flashMessage('Could not scrape URL: request failed.');
-    });
+
+    // Fetch in browser to bypass deployment proxy; send HTML to server.
+    fetch(url, { redirect: 'follow' })
+        .then(pageResp => {
+            if (!pageResp.ok) throw new Error(`Page returned ${pageResp.status}`);
+            return pageResp.text();
+        })
+        .then(html => {
+            return fetch('/api/capture', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                body: JSON.stringify({ statement_id: statementId, url: url, html: html })
+            });
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (!data || !data.ok) {
+                flashMessage('Could not scrape URL: ' + ((data && data.error) || 'unknown error'));
+                return;
+            }
+            if (typeof evidenceData !== 'undefined') {
+                const sid = String(statementId);
+                const params = new URLSearchParams(window.location.search);
+                params.set('stmt', sid);
+                window.location.search = params.toString() ? '?' + params.toString() : '';
+            }
+        })
+        .catch(err => {
+            // CORS or network error - guide to extension
+            if (err instanceof TypeError && err.message.includes('CORS')) {
+                flashMessage('This site blocks cross-origin fetches. Open it in a new tab and use the Compendium extension to capture.');
+            } else {
+                flashMessage('Could not scrape URL: ' + (err.message || 'request failed'));
+            }
+        });
 }
 
 // Lightweight, self-dismissing status line. Reuses the confirm-modal overlay

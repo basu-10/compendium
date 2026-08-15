@@ -24,6 +24,7 @@ export function initAttachScrape(root, statementId, tabsApi) {
             // returning 403 for everything else). We send the raw HTML to the
             // server, which already skips fetching when `html` is provided.
             let html = '';
+            let browserFetchFailed = false;
             try {
                 const pageResp = await fetch(url, { redirect: 'follow' });
                 if (!pageResp.ok) {
@@ -31,7 +32,18 @@ export function initAttachScrape(root, statementId, tabsApi) {
                 }
                 html = await pageResp.text();
             } catch (fetchErr) {
-                if (scrapeStatus) scrapeStatus.textContent = `Could not fetch URL in browser (CORS or network): ${fetchErr.message}`;
+                browserFetchFailed = true;
+                // CORS or network error - guide user to use the extension
+                const msg = `This site blocks cross-origin fetches. To capture it:
+1. Click "Open in new tab" below
+2. Click the Compendium extension icon in your toolbar
+3. Select this statement and click Save`;
+                if (scrapeStatus) {
+                    scrapeStatus.innerHTML = msg.replace(/\n/g, '<br>') + 
+                        '<br><br><button type="button" class="btn btn-primary" id="open-tab-btn">Open in new tab</button>';
+                    const openBtn = scrapeStatus.querySelector('#open-tab-btn');
+                    if (openBtn) openBtn.addEventListener('click', () => window.open(url, '_blank'));
+                }
                 return;
             }
 

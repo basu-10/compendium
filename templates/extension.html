@@ -1,0 +1,139 @@
+{% extends "public_base.html" %}
+
+{% block title %}Compendium Capture - Browser extension{% endblock %}
+{% block description %}Compendium Capture is a Chrome extension that saves any webpage straight to a statement in your Compendium knowledge base. Download it and start capturing the web.{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="public-container hero-inner">
+        <span class="eyebrow">Compendium Capture</span>
+        <h1 class="hero-title">Save any page,<br>straight to your argument.</h1>
+        <p class="hero-sub">
+            Compendium Capture is a browser extension that clips the page you're reading and drops it
+            as a richtext asset onto the statement it supports. No more copy-paste, no more lost tabs,
+            no broken trail between what you read and what you claim.
+        </p>
+        <div class="hero-actions">
+            <a href="{{ url_for('extension_download') }}" class="btn-cta btn-cta-lg">Download extension</a>
+            <a href="#install" class="btn-ghost btn-ghost-lg">How to install</a>
+        </div>
+        {% if ext_info %}
+        <p class="extension-version">Version {{ ext_info.get('version', '1.0.0') }} &middot; Chrome / Chromium &middot; Manifest V3</p>
+        {% endif %}
+    </div>
+</section>
+
+<section class="section">
+    <div class="public-container">
+        <div class="section-intro">
+            <span class="eyebrow">What it does</span>
+            <h2 class="section-title">Capture the web into Compendium</h2>
+            <p class="section-lead">
+                The extension turns passive browsing into structured evidence. Open a popup, pick where
+                the page belongs, and it lands as an asset right behind the claim it backs up.
+            </p>
+        </div>
+
+        <div class="feature-grid">
+            <article class="feature-card">
+                <div class="feature-icon">&#9673;</div>
+                <h3>One-click save</h3>
+                <p>
+                    Click the toolbar icon to open the capture popup. The current page's title and
+                    content are already loaded &mdash; just choose a destination and save.
+                </p>
+            </article>
+            <article class="feature-card">
+                <div class="feature-icon">&#9783;</div>
+                <h3>Right-click capture</h3>
+                <p>
+                    Use the "Save to Compendium" context menu on any page, link, image, or selection.
+                    The page is stashed and ready the moment you open the popup.
+                </p>
+            </article>
+            <article class="feature-card">
+                <div class="feature-icon">&#9788;</div>
+                <h3>Pick the destination</h3>
+                <p>
+                    File the clip into a domain, folder, topic, and the exact statement it supports.
+                    Your last choice is remembered so repeat captures are even faster.
+                </p>
+            </article>
+            <article class="feature-card">
+                <div class="feature-icon">&#9639;</div>
+                <h3>Tag as you go</h3>
+                <p>
+                    Add comma-separated tags while capturing so the asset is organised the instant it
+                    reaches your knowledge base, not later when you've forgotten the context.
+                </p>
+            </article>
+            <article class="feature-card">
+                <div class="feature-icon">&#9632;</div>
+                <h3>Stored as richtext</h3>
+                <p>
+                    Captured pages arrive as richtext assets, so the formatting, quotes, and structure
+                    you read are preserved next to the statement they prove.
+                </p>
+            </article>
+            <article class="feature-card">
+                <div class="feature-icon">&#9650;</div>
+                <h3>Keeps the trail</h3>
+                <p>
+                    Because the clip attaches to a specific statement, the source never drifts away
+                    from the claim. Six months later, the reasoning and the proof are still together.
+                </p>
+            </article>
+        </div>
+    </div>
+</section>
+
+<section class="section section-alt" id="install">
+    <div class="public-container">
+        <div class="section-intro">
+            <span class="eyebrow">Install</span>
+            <h2 class="section-title">Running the extension in three steps</h2>
+            <p class="section-lead">
+                Compendium Capture installs unpacked &mdash; no Chrome Web Store needed. Download the
+                files, point Chrome at the folder, and you're capturing.
+            </p>
+        </div>
+        <ol class="steps">
+            <li class="step">
+                <span class="step-num">1</span>
+                <div class="step-body">
+                    <h4>Download the files</h4>
+                    <p>Grab the bundle and unzip it somewhere you'll keep it. You'll load that folder directly into Chrome.</p>
+                    <a href="{{ url_for('extension_download') }}" class="btn-ghost">Download extension</a>
+                </div>
+            </li>
+            <li class="step">
+                <span class="step-num">2</span>
+                <div class="step-body">
+                    <h4>Load unpacked</h4>
+                    <p>Open <code>chrome://extensions</code>, switch on <strong>Developer mode</strong> (top right), and click <strong>Load unpacked</strong>. Select the unzipped <code>compendium-capture</code> folder.</p>
+                </div>
+            </li>
+            <li class="step">
+                <span class="step-num">3</span>
+                <div class="step-body">
+                    <h4>Point it at your server</h4>
+                    <p>The extension talks to Compendium over <code>localhost</code>. Make sure your Compendium instance is running, then click the icon on any page to start saving.</p>
+                </div>
+            </li>
+        </ol>
+        <p class="install-note">
+            The extension connects to a Compendium server on your machine. If your instance runs on a
+            different host or port, update <code>host_permissions</code> in <code>manifest.json</code>
+            to match before loading it.
+        </p>
+    </div>
+</section>
+
+<section class="cta-band">
+    <div class="public-container cta-inner">
+        <h2>Start capturing the web.</h2>
+        <p>Download Compendium Capture and turn every tab into evidence.</p>
+        <a href="{{ url_for('extension_download') }}" class="btn-cta btn-cta-lg btn-cta-invert">Download extension</a>
+    </div>
+</section>
+{% endblock %}

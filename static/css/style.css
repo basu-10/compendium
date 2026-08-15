@@ -3021,6 +3021,35 @@ body.modal-open .topic-card-summary:hover {
     margin-top: 2.25rem;
 }
 
+.extension-version {
+    margin-top: 1.5rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    color: var(--text-muted);
+}
+
+.install-note {
+    margin-top: 2.5rem;
+    padding: 1rem 1.25rem;
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    background-color: var(--bg-subtle, var(--bg-alt));
+    border: 1px solid var(--border);
+    border-radius: 0.6rem;
+}
+
+.install-note code,
+.step-body code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85em;
+    padding: 0.1em 0.4em;
+    border-radius: 0.3em;
+    background-color: var(--bg-alt);
+    border: 1px solid var(--border);
+}
+
 .hero-stats {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3133,6 +3162,26 @@ body.modal-open .topic-card-summary:hover {
 .feature-card p {
     font-size: 0.9rem;
     line-height: 1.65;
+}
+
+.feature-card-link {
+    display: flex;
+    flex-direction: column;
+    text-decoration: none;
+    color: inherit;
+    border-color: #d1d5db;
+}
+
+.feature-card-link:hover {
+    border-color: var(--accent, #0d9488);
+}
+
+.feature-card-cta {
+    margin-top: auto;
+    padding-top: 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--accent, #0d9488);
 }
 
 /* Steps */

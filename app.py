@@ -1025,6 +1025,49 @@ def about():
     return render_template('about.html')
 
 
+@app.route('/extension')
+def extension_page():
+    """Marketing / download page for the Compendium Capture browser extension."""
+    ext_dir = os.path.join(REPO_DIR, 'extension')
+    ext_info = None
+    manifest_path = os.path.join(ext_dir, 'manifest.json')
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path, encoding='utf-8') as fh:
+                ext_info = json.load(fh)
+        except (OSError, ValueError):
+            ext_info = None
+    return render_template('extension.html', ext_info=ext_info)
+
+
+@app.route('/extension/download')
+def extension_download():
+    """Serve the Compendium Capture extension source as a downloadable .zip.
+
+    Chrome extensions are installed unpacked (chrome://extensions -> Developer
+    mode -> Load unpacked), so we bundle the whole `extension/` directory rather
+    than publishing to a store. The zip is built in memory so no temp file is
+    left on disk.
+    """
+    ext_dir = os.path.join(REPO_DIR, 'extension')
+    if not os.path.isdir(ext_dir):
+        return 'Extension files not found', 404
+    mem = io.BytesIO()
+    with zipfile.ZipFile(mem, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for root, _dirs, files in os.walk(ext_dir):
+            for fname in files:
+                full = os.path.join(root, fname)
+                rel = os.path.relpath(full, ext_dir)
+                zf.write(full, os.path.join('compendium-capture', rel))
+    mem.seek(0)
+    return send_file(
+        mem,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name='compendium-capture-extension.zip',
+    )
+
+
 @app.route('/alldomains')
 def all_domains():
     conn = get_db()

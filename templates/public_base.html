@@ -44,6 +44,7 @@
             </a>
             <nav class="public-nav">
                 <a href="{{ url_for('index') }}" class="public-nav-link {% if request.endpoint == 'index' %}active{% endif %}">Home</a>
+                <a href="{{ url_for('extension_page') }}" class="public-nav-link {% if request.endpoint == 'extension_page' %}active{% endif %}">Extension</a>
                 <a href="{{ url_for('about') }}" class="public-nav-link {% if request.endpoint == 'about' %}active{% endif %}">About</a>
                 <a href="{{ url_for('all_domains') }}" class="public-nav-link {% if request.endpoint in ['all_domains', 'domain', 'topic'] %}active{% endif %}">All Domains</a>
             </nav>
@@ -59,6 +60,7 @@
         <div class="public-container">
             <div class="public-mobile-menu">
                 <a href="{{ url_for('index') }}" class="public-nav-link {% if request.endpoint == 'index' %}active{% endif %}">Home</a>
+                <a href="{{ url_for('extension_page') }}" class="public-nav-link {% if request.endpoint == 'extension_page' %}active{% endif %}">Extension</a>
                 <a href="{{ url_for('about') }}" class="public-nav-link {% if request.endpoint == 'about' %}active{% endif %}">About</a>
                 <a href="{{ url_for('all_domains') }}" class="public-nav-link {% if request.endpoint in ['all_domains', 'domain', 'topic'] %}active{% endif %}">All Domains</a>
                 <a href="{{ url_for('dashboard') }}" class="public-nav-link">Sign in</a>
@@ -93,6 +95,7 @@
             <div class="public-footer-links">
                 <div class="public-footer-col">
                     <h5>Product</h5>
+                    <a href="{{ url_for('extension_page') }}">Browser extension</a>
                     <a href="{{ url_for('all_domains') }}">All Domains</a>
                     <a href="{{ url_for('dashboard') }}">Dashboard</a>
                 </div>

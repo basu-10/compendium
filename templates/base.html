@@ -288,6 +288,24 @@
                         <p class="settings-data-note">Exports every topic, statement, and attachment you own (including uploaded files) as a single archive. Importing restores them into this account.</p>
                     </div>
                 </fieldset>
+                <fieldset class="settings-group">
+                    <legend>API Token</legend>
+                    <div class="settings-token-actions">
+                        <div id="token-display" class="token-display">
+                            <label>API Token (for browser extension)</label>
+                            <div class="token-input-group">
+                                <input type="text" id="api-token-input" readonly placeholder="No token generated">
+                                <button type="button" class="btn-secondary btn-sm" id="token-copy-btn" disabled title="Copy to clipboard">Copy</button>
+                            </div>
+                        </div>
+                        <div class="token-buttons">
+                            <button type="button" class="btn-primary btn-block" id="token-generate-btn">Generate Token</button>
+                            <button type="button" class="btn-secondary btn-block" id="token-regenerate-btn" disabled>Regenerate Token</button>
+                            <button type="button" class="btn-danger btn-block" id="token-revoke-btn" disabled>Revoke Token</button>
+                        </div>
+                        <p class="settings-data-note">Generate a token to authenticate the Compendium Capture browser extension. Keep it secret — anyone with this token can save captures to your account.</p>
+                    </div>
+                </fieldset>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn-secondary" data-close-modal="settings-modal">Cancel</button>
@@ -388,6 +406,100 @@
                         importFile.value = '';
                     });
                 });
+            }
+
+            // API Token management
+            async function loadToken() {
+                try {
+                    const resp = await fetch("{{ url_for('api_token_status') }}");
+                    const data = await resp.json();
+                    const input = document.getElementById('api-token-input');
+                    const copyBtn = document.getElementById('token-copy-btn');
+                    const genBtn = document.getElementById('token-generate-btn');
+                    const regenBtn = document.getElementById('token-regenerate-btn');
+                    const revokeBtn = document.getElementById('token-revoke-btn');
+                    
+                    if (data.has_token) {
+                        // We only show the token once on generation; stored token is not retrievable
+                        input.placeholder = 'Token generated (hidden for security)';
+                        input.value = '';
+                        copyBtn.disabled = true;
+                        genBtn.disabled = true;
+                        regenBtn.disabled = false;
+                        revokeBtn.disabled = false;
+                    } else {
+                        input.placeholder = 'No token generated';
+                        input.value = '';
+                        copyBtn.disabled = true;
+                        genBtn.disabled = false;
+                        regenBtn.disabled = true;
+                        revokeBtn.disabled = true;
+                    }
+                } catch (e) {
+                    console.error('Failed to load token status:', e);
+                }
+            }
+
+            const genBtn = document.getElementById('token-generate-btn');
+            const regenBtn = document.getElementById('token-regenerate-btn');
+            const revokeBtn = document.getElementById('token-revoke-btn');
+            const copyBtn = document.getElementById('token-copy-btn');
+            const tokenInput = document.getElementById('api-token-input');
+
+            async function handleTokenAction(action) {
+                const btn = action === 'generate' ? genBtn : (action === 'regenerate' ? regenBtn : revokeBtn);
+                const originalText = btn.textContent;
+                btn.disabled = true;
+                btn.textContent = action === 'revoke' ? 'Revoking…' : 'Generating…';
+                
+                try {
+                    const resp = await fetch("{{ url_for('api_token_' + action) }}", { method: 'POST' });
+                    const data = await resp.json();
+                    
+                    if (data.ok) {
+                        if (action === 'revoke') {
+                            flashMessage('Token revoked.', 'success');
+                        } else {
+                            // Show the new token once
+                            tokenInput.value = data.token;
+                            tokenInput.select();
+                            flashMessage('Token generated! Copy it now — it won\'t be shown again.', 'success');
+                        }
+                        await loadToken();
+                    } else {
+                        flashMessage(data.error || 'Operation failed.', 'error');
+                    }
+                } catch (e) {
+                    flashMessage('Request failed: ' + e.message, 'error');
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                }
+            }
+
+            if (genBtn) genBtn.addEventListener('click', () => handleTokenAction('generate'));
+            if (regenBtn) regenBtn.addEventListener('click', () => handleTokenAction('regenerate'));
+            if (revokeBtn) revokeBtn.addEventListener('click', () => handleTokenAction('revoke'));
+
+            if (copyBtn) {
+                copyBtn.addEventListener('click', async () => {
+                    if (tokenInput.value) {
+                        await navigator.clipboard.writeText(tokenInput.value);
+                        copyBtn.textContent = 'Copied!';
+                        setTimeout(() => copyBtn.textContent = 'Copy', 2000);
+                    }
+                });
+            }
+
+            // Load token status on modal open
+            const settingsModal = document.getElementById('settings-modal');
+            if (settingsModal) {
+                const observer = new MutationObserver(function(mutations) {
+                    if (settingsModal.classList.contains('active')) {
+                        loadToken();
+                    }
+                });
+                observer.observe(settingsModal, { attributes: true, attributeFilter: ['class'] });
             }
 
             // Lightweight flash injected into the page without a reload (used by

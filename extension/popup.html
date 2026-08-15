@@ -78,6 +78,18 @@
       z-index: 100; display: none;
     }
     .loading-overlay.active { display: flex; }
+    .auth-section {
+      padding: 16px;
+      border-bottom: 1px solid #e5e5e5;
+      background: #fafafa;
+    }
+    .auth-section.hidden { display: none; }
+    .auth-section label { display: block; font-size: 12px; font-weight: 500; margin-bottom: 6px; color: #374151; }
+    .auth-input-group { display: flex; gap: 8px; }
+    .auth-input-group input { flex: 1; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; font-family: inherit; }
+    .auth-input-group button { padding: 8px 12px; background: #0d9488; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; }
+    .auth-input-group button:hover { background: #0f766e; }
+    .auth-hint { font-size: 11px; color: #9ca3af; margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -97,6 +109,15 @@
   </div>
 
   <div class="content" id="mainContent">
+    <div class="auth-section" id="authSection">
+      <label for="apiTokenInput">API Token</label>
+      <div class="auth-input-group">
+        <input type="password" id="apiTokenInput" placeholder="Paste your API token from Compendium settings">
+        <button type="button" id="saveTokenBtn">Save</button>
+      </div>
+      <div class="auth-hint">Get your token from Compendium → Settings → API Token</div>
+    </div>
+
     <div class="form-group">
       <label>Destination</label>
       <div class="nested-selects" id="destinationSelects">

@@ -13,23 +13,89 @@ const statusDiv = document.getElementById('status');
 const loadingOverlay = document.getElementById('loadingOverlay');
 const mainContent = document.getElementById('mainContent');
 const folderRow = document.getElementById('folderRow');
+const authSection = document.getElementById('authSection');
+const apiTokenInput = document.getElementById('apiTokenInput');
+const saveTokenBtn = document.getElementById('saveTokenBtn');
 
 let treeData = null;
 let currentPageData = null;
+let apiToken = null;
 
 // Initialize on popup open
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadTree();
-  await loadPendingCapture();
-  restoreSelection();
-  updateSaveButtonState();
+  await loadToken();
+  if (apiToken) {
+    authSection.classList.add('hidden');
+    await loadTree();
+    await loadPendingCapture();
+    restoreSelection();
+    updateSaveButtonState();
+  }
 });
+
+// Load saved API token
+async function loadToken() {
+  const result = await chrome.storage.local.get('apiToken');
+  if (result.apiToken) {
+    apiToken = result.apiToken;
+  } else {
+    // Show auth section
+    authSection.classList.remove('hidden');
+    saveTokenBtn.addEventListener('click', saveToken);
+  }
+}
+
+async function saveToken() {
+  const token = apiTokenInput.value.trim();
+  if (!token) {
+    showStatus('Please enter an API token', 'error');
+    return;
+  }
+  
+  // Test the token by fetching tree
+  saveTokenBtn.disabled = true;
+  saveTokenBtn.textContent = 'Verifying…';
+  
+  try {
+    const response = await fetchWithAuth(`${API_BASE}/api/tree`);
+    if (!response.ok) throw new Error('Invalid token');
+    await chrome.storage.local.set({ apiToken: token });
+    apiToken = token;
+    authSection.classList.add('hidden');
+    showStatus('Token saved!', 'success');
+    await loadTree();
+    await loadPendingCapture();
+    restoreSelection();
+    updateSaveButtonState();
+  } catch (error) {
+    showStatus('Invalid token: ' + error.message, 'error');
+  } finally {
+    saveTokenBtn.disabled = false;
+    saveTokenBtn.textContent = 'Save';
+  }
+}
+
+// Fetch with Authorization header
+async function fetchWithAuth(url, options = {}) {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  };
+  if (apiToken) {
+    headers['Authorization'] = `Bearer ${apiToken}`;
+  }
+  return fetch(url, {
+    ...options,
+    headers,
+    credentials: 'include',
+  });
+}
 
 // Load the domain/folder/topic/statement tree
 async function loadTree() {
   showLoading(true);
   try {
-    const response = await fetch(`${API_BASE}/api/tree`);
+    const response = await fetchWithAuth(`${API_BASE}/api/tree`);
     if (!response.ok) throw new Error('Failed to load tree');
     treeData = await response.json();
     populateDomainSelect();
@@ -278,9 +344,8 @@ saveBtn.addEventListener('click', async () => {
   showStatus('Saving…', 'loading');
 
   try {
-    const response = await fetch(`${API_BASE}/api/capture`, {
+    const response = await fetchWithAuth(`${API_BASE}/api/capture`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         statement_id: statementId,
         title: titleInput.value.trim() || currentPageData.title,

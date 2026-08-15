@@ -81,6 +81,11 @@ logger.info('Compendium starting: REPO_DIR=%s DATA_DIR=%s DEBUG=%s',
 app = Flask(__name__)
 # CHANGE THIS before deploying: a stable random secret protects session cookies.
 app.secret_key = os.environ.get('COMPANION_SECRET_KEY', 'compendium-dev-secret-key-change-me')
+
+# CORS for Chrome extension (cross-origin from chrome-extension://)
+from flask_cors import CORS
+CORS(app, supports_credentials=True, origins=["chrome-extension://*"])
+
 # Runtime data (database, uploads, logs) lives OUTSIDE the repo so the code can
 # be updated with `git clone`/`git pull` without touching generated data. The
 # expected on-disk layout is:
@@ -530,6 +535,7 @@ def init_db():
     # integrity is enforced in app code (see create_topic/update_topic) and the
     # column is nullable so a topic may sit directly under a domain if needed.
     _ensure_column(conn, cursor, 'topics', 'folder_id', 'INTEGER')
+    _ensure_column(conn, cursor, 'users', 'api_token_hash', 'TEXT')
 
     # -----------------------------------------------------------------------
     # HARD RULE — domains are PUBLISH TARGETS, not ownership containers.
@@ -2629,7 +2635,23 @@ def attachment_table(attachment_id):
 
 @app.route('/api/tree')
 def api_tree():
-    """Return the full domain→folder→topic→statement tree for the extension picker."""
+    """Return the full domain→folder→topic→statement tree for the extension picker.
+    
+    Auth: accepts either session cookie or Bearer token (for extension).
+    """
+    # Try token auth first
+    auth = request.headers.get('Authorization', '')
+    user_id = None
+    if auth.startswith('Bearer '):
+        user_id = validate_api_token(auth[7:])
+    
+    # Fall back to session auth
+    if user_id is None and g.user is not None:
+        user_id = g.user['id']
+    
+    if user_id is None:
+        return jsonify({'error': 'Authentication required'}), 401
+    
     conn = get_db()
     # The picker is an authenticated owner tool, so no public-only filtering.
     topic_vis = ''
@@ -2711,6 +2733,29 @@ CKEDITOR_ATTRS = {
 }
 
 SAFE_URL_SCHEMES = frozenset(('http', 'https', 'data'))
+
+
+def validate_api_token(token):
+    """Validate API token from Authorization header.
+    
+    Token format: 'user_id.token_hash' where token_hash is bcrypt-hashed.
+    Returns user_id if valid, None otherwise.
+    """
+    if not token:
+        return None
+    try:
+        user_id_str, token_hash = token.split('.', 1)
+        user_id = int(user_id_str)
+    except ValueError:
+        return None
+    
+    conn = get_db()
+    user = conn.execute('SELECT id, api_token_hash FROM users WHERE id = ?', (user_id,)).fetchone()
+    conn.close()
+    
+    if user and user['api_token_hash'] and check_password_hash(user['api_token_hash'], token_hash):
+        return user['id']
+    return None
 
 
 def _sanitize_html(html):
@@ -2870,9 +2915,24 @@ def api_scrape_preview():
 
 
 @app.route('/api/capture', methods=['POST'])
-@login_required
 def api_capture():
-    """Capture a webpage: readability → sanitize → rehost images → save as richtext attachment."""
+    """Capture a webpage: readability → sanitize → rehost images → save as richtext attachment.
+    
+    Auth: accepts either session cookie or Bearer token (for extension).
+    """
+    # Try token auth first
+    auth = request.headers.get('Authorization', '')
+    user_id = None
+    if auth.startswith('Bearer '):
+        user_id = validate_api_token(auth[7:])
+    
+    # Fall back to session auth
+    if user_id is None and g.user is not None:
+        user_id = g.user['id']
+    
+    if user_id is None:
+        return jsonify({'ok': False, 'error': 'Authentication required'}), 401
+    
     data = request.get_json(silent=True) or {}
     statement_id = data.get('statement_id')
     title = (data.get('title') or '').strip()
@@ -4402,6 +4462,111 @@ def account_import():
         'message': f"Imported {len(topic_id_map)} topics, "
                    f"{len(statement_id_map)} statements, {att_count} attachments.",
     })
+
+
+def _get_user_from_token_or_session():
+    """Get user_id from Bearer token or session. Returns user_id or None."""
+    # Try token auth first
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        user_id = validate_api_token(auth[7:])
+        if user_id:
+            return user_id
+    
+    # Fall back to session auth
+    if g.user is not None:
+        return g.user['id']
+    
+    return None
+
+
+@app.route('/api/token/status')
+def api_token_status():
+    """Return whether the current user has an API token.
+    
+    Auth: accepts either session cookie or Bearer token.
+    """
+    user_id = _get_user_from_token_or_session()
+    if user_id is None:
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    conn = get_db()
+    user = conn.execute('SELECT api_token_hash FROM users WHERE id = ?', (user_id,)).fetchone()
+    conn.close()
+    has_token = user and user['api_token_hash'] is not None
+    return jsonify({'has_token': has_token})
+
+
+@app.route('/api/token/generate', methods=['POST'])
+def api_token_generate():
+    """Generate a new API token for the current user.
+    
+    Returns the token (format: user_id.token_hash) which must be stored by the client.
+    The token is only shown once — it cannot be retrieved later.
+    
+    Auth: accepts either session cookie or Bearer token.
+    """
+    user_id = _get_user_from_token_or_session()
+    if user_id is None:
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    import secrets
+    # Generate a random token (32 bytes = 256 bits)
+    token_raw = secrets.token_urlsafe(32)
+    # Hash it for storage (bcrypt)
+    token_hash = generate_password_hash(token_raw)
+    # Format: user_id.token_hash (user_id is needed for validation lookup)
+    token = f"{user_id}.{token_hash}"
+    
+    conn = get_db()
+    conn.execute('UPDATE users SET api_token_hash = ? WHERE id = ?', (token_hash, user_id))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'ok': True, 'token': token})
+
+
+@app.route('/api/token/regenerate', methods=['POST'])
+def api_token_regenerate():
+    """Regenerate (rotate) the API token for the current user.
+    
+    Returns the new token (format: user_id.token_hash).
+    
+    Auth: accepts either session cookie or Bearer token.
+    """
+    user_id = _get_user_from_token_or_session()
+    if user_id is None:
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    import secrets
+    token_raw = secrets.token_urlsafe(32)
+    token_hash = generate_password_hash(token_raw)
+    token = f"{user_id}.{token_hash}"
+    
+    conn = get_db()
+    conn.execute('UPDATE users SET api_token_hash = ? WHERE id = ?', (token_hash, user_id))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'ok': True, 'token': token})
+
+
+@app.route('/api/token/revoke', methods=['POST'])
+def api_token_revoke():
+    """Revoke the current user's API token.
+    
+    Auth: accepts either session cookie or Bearer token.
+    """
+    user_id = _get_user_from_token_or_session()
+    if user_id is None:
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    conn = get_db()
+    conn.execute('UPDATE users SET api_token_hash = NULL WHERE id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'ok': True})
 
 
 if __name__ == '__main__':

@@ -14,12 +14,43 @@ import uuid
 import secrets
 from cryptography.fernet import Fernet
 
-# Encryption key for API tokens (in production, this should be from environment variable)
+# Repo / data directory resolution. DATA_DIR is a sibling of this repo
+# (compendium-data/) kept OUT of git so code stays separate from sensitive,
+# user-generated, and server-generated data.
+REPO_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.environ.get(
+    'COMPANION_DATA_DIR',
+    os.path.join(os.path.dirname(REPO_DIR), 'compendium-data'),
+)
+
+# Encryption key for API tokens.
+# Resolution order (first match wins):
+#   1. TOKEN_ENCRYPTION_KEY env var (e.g. set by the WSGI/host config)
+#   2. compendium-data/token_key.txt  (untracked, lives outside this repo)
+#   3. generate a throwaway key at startup (dev only — tokens become undecryptable
+#      after a restart, so never rely on this in production)
 TOKEN_ENCRYPTION_KEY = os.environ.get('TOKEN_ENCRYPTION_KEY')
+if not TOKEN_ENCRYPTION_KEY and DATA_DIR:
+    _key_path = os.path.join(DATA_DIR, 'token_key.txt')
+    try:
+        if os.path.exists(_key_path):
+            with open(_key_path, 'r') as _f:
+                TOKEN_ENCRYPTION_KEY = _f.read().strip()
+        else:
+            TOKEN_ENCRYPTION_KEY = Fernet.generate_key().decode()
+            with open(_key_path, 'w') as _f:
+                _f.write(TOKEN_ENCRYPTION_KEY)
+            os.chmod(_key_path, 0o600)
+            print(f"Generated API token encryption key at {_key_path}")
+    except OSError as _e:
+        print(f"WARNING: could not read/write token key file ({_e}); generating in-memory key.")
+        TOKEN_ENCRYPTION_KEY = Fernet.generate_key().decode()
+
 if not TOKEN_ENCRYPTION_KEY:
-    # Generate a key for development (in production, this should be set in env)
-    TOKEN_ENCRYPTION_KEY = Fernet.generate_key()
-    print("WARNING: Using generated encryption key for API tokens. Set TOKEN_ENCRYPTION_KEY in production.")
+    # Last-resort fallback (no DATA_DIR available)
+    TOKEN_ENCRYPTION_KEY = Fernet.generate_key().decode()
+    print("WARNING: Using generated in-memory encryption key for API tokens.")
+
 token_cipher = Fernet(TOKEN_ENCRYPTION_KEY)
 
 import hashlib
@@ -44,11 +75,6 @@ UNIVER_DATA_PREFIX = 'univer:'
 # defaults to ON when FLASK_DEBUG is set or running outside a production WSGI.
 # ---------------------------------------------------------------------------
 DEBUG_ENABLED = bool(os.environ.get('COMPANION_DEBUG') or os.environ.get('FLASK_DEBUG'))
-REPO_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.environ.get(
-    'COMPANION_DATA_DIR',
-    os.path.join(os.path.dirname(REPO_DIR), 'compendium-data'),
-)
 
 logger = logging.getLogger('compendium')
 if DEBUG_ENABLED:
@@ -1035,6 +1061,12 @@ def index():
 @app.route('/favicon.ico')
 def favicon():
     return '', 204
+
+
+@app.route('/robots.txt')
+def robots_txt():
+    """Basic robots.txt to prevent 404 errors in logs."""
+    return 'User-agent: *\nDisallow: /', 200, {'Content-Type': 'text/plain'}
 
 
 @app.route('/about')

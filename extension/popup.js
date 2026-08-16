@@ -1,6 +1,9 @@
 // Compendium Capture - Popup Logic
 
-const API_BASE = 'http://localhost:10000';
+// API base URL. Defaults to the hosted instance; override via the
+// "apiBase" key in chrome.storage.local (e.g. for a local dev server).
+const DEFAULT_API_BASE = 'https://compendium.pythonanywhere.com';
+let API_BASE = DEFAULT_API_BASE;
 
 const domainSelect = document.getElementById('domainSelect');
 const folderSelect = document.getElementById('folderSelect');
@@ -23,6 +26,8 @@ let apiToken = null;
 
 // Initialize on popup open
 document.addEventListener('DOMContentLoaded', async () => {
+  const stored = await chrome.storage.local.get('apiBase');
+  if (stored.apiBase) API_BASE = stored.apiBase;
   await loadToken();
   if (apiToken) {
     authSection.classList.add('hidden');

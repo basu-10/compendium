@@ -4,7 +4,10 @@
   "version": "1.0.0",
   "description": "Save any webpage as a richtext asset to your Compendium knowledge base.",
   "permissions": ["activeTab", "scripting", "storage"],
-  "host_permissions": ["http://localhost:10000/*"],
+  "host_permissions": [
+    "https://compendium.pythonanywhere.com/*",
+    "http://localhost:10000/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },

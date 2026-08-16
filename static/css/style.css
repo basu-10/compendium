@@ -4316,6 +4316,78 @@ body.theme-modern2 .topic .add-row-modern2:hover {
     line-height: 1.4;
 }
 
+/* Token display styles for API token section */
+.settings-token-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.token-display {
+    background-color: var(--bg-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem;
+}
+
+.token-display label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.token-input-group {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.token-input-group input {
+    flex: 1;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.75rem;
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+.token-input-group input:focus {
+    border-color: var(--accent-teal);
+    background-color: var(--bg-surface);
+}
+
+.token-input-group input::placeholder {
+    color: var(--text-muted);
+}
+
+.token-input-group .btn-sm {
+    flex-shrink: 0;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.token-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.token-buttons .btn-block {
+    width: 100%;
+    justify-content: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
 /* ===========================================================================
    Rich-text (CKEditor 5) + Spreadsheet (Univer) editors
    Both libraries ship fixed-colour stylesheets; these overrides retheme them

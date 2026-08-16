@@ -12,6 +12,16 @@ import tempfile
 import json
 import uuid
 import secrets
+from cryptography.fernet import Fernet
+
+# Encryption key for API tokens (in production, this should be from environment variable)
+TOKEN_ENCRYPTION_KEY = os.environ.get('TOKEN_ENCRYPTION_KEY')
+if not TOKEN_ENCRYPTION_KEY:
+    # Generate a key for development (in production, this should be set in env)
+    TOKEN_ENCRYPTION_KEY = Fernet.generate_key()
+    print("WARNING: Using generated encryption key for API tokens. Set TOKEN_ENCRYPTION_KEY in production.")
+token_cipher = Fernet(TOKEN_ENCRYPTION_KEY)
+
 import hashlib
 import string
 import logging
@@ -536,6 +546,7 @@ def init_db():
     # column is nullable so a topic may sit directly under a domain if needed.
     _ensure_column(conn, cursor, 'topics', 'folder_id', 'INTEGER')
     _ensure_column(conn, cursor, 'users', 'api_token_hash', 'TEXT')
+    _ensure_column(conn, cursor, 'users', 'api_token_encrypted', 'TEXT')
 
     # -----------------------------------------------------------------------
     # HARD RULE — domains are PUBLISH TARGETS, not ownership containers.
@@ -4497,6 +4508,32 @@ def api_token_status():
     return jsonify({'has_token': has_token})
 
 
+@app.route('/api/token/view', methods=['POST'])
+def api_token_view():
+    """Return the current user's API token (decrypted for display).
+    
+    Auth: accepts either session cookie or Bearer token.
+    """
+    user_id = _get_user_from_token_or_session()
+    if user_id is None:
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    conn = get_db()
+    user = conn.execute('SELECT api_token_encrypted FROM users WHERE id = ?', (user_id,)).fetchone()
+    conn.close()
+    
+    if not user or not user['api_token_encrypted']:
+        return jsonify({'error': 'No token found'}), 404
+    
+    try:
+        token_raw = token_cipher.decrypt(user['api_token_encrypted'].encode()).decode()
+        token_hash = generate_password_hash(token_raw)
+        token = f"{user_id}.{token_hash}"
+        return jsonify({'ok': True, 'token': token})
+    except Exception as e:
+        return jsonify({'error': 'Failed to decrypt token'}), 500
+
+
 @app.route('/api/token/generate', methods=['POST'])
 def api_token_generate():
     """Generate a new API token for the current user.
@@ -4517,9 +4554,11 @@ def api_token_generate():
     token_hash = generate_password_hash(token_raw)
     # Format: user_id.token_hash (user_id is needed for validation lookup)
     token = f"{user_id}.{token_hash}"
+    # Encrypt the raw token for display purposes
+    token_encrypted = token_cipher.encrypt(token_raw.encode()).decode()
     
     conn = get_db()
-    conn.execute('UPDATE users SET api_token_hash = ? WHERE id = ?', (token_hash, user_id))
+    conn.execute('UPDATE users SET api_token_hash = ?, api_token_encrypted = ? WHERE id = ?', (token_hash, token_encrypted, user_id))
     conn.commit()
     conn.close()
     
@@ -4542,9 +4581,11 @@ def api_token_regenerate():
     token_raw = secrets.token_urlsafe(32)
     token_hash = generate_password_hash(token_raw)
     token = f"{user_id}.{token_hash}"
+    # Encrypt the raw token for display purposes
+    token_encrypted = token_cipher.encrypt(token_raw.encode()).decode()
     
     conn = get_db()
-    conn.execute('UPDATE users SET api_token_hash = ? WHERE id = ?', (token_hash, user_id))
+    conn.execute('UPDATE users SET api_token_hash = ?, api_token_encrypted = ? WHERE id = ?', (token_hash, token_encrypted, user_id))
     conn.commit()
     conn.close()
     
@@ -4562,7 +4603,7 @@ def api_token_revoke():
         return jsonify({'error': 'Authentication required'}), 401
     
     conn = get_db()
-    conn.execute('UPDATE users SET api_token_hash = NULL WHERE id = ?', (user_id,))
+    conn.execute('UPDATE users SET api_token_hash = NULL, api_token_encrypted = NULL WHERE id = ?', (user_id,))
     conn.commit()
     conn.close()
     

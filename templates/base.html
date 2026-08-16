@@ -296,12 +296,12 @@
                             <div class="token-input-group">
                                 <input type="text" id="api-token-input" readonly placeholder="No token generated">
                                 <button type="button" class="btn-secondary btn-sm" id="token-copy-btn" disabled title="Copy to clipboard">Copy</button>
+                                <button type="button" class="btn-danger btn-sm" id="token-revoke-btn" disabled title="Revoke this token">Revoke</button>
                             </div>
                         </div>
                         <div class="token-buttons">
                             <button type="button" class="btn-primary btn-block" id="token-generate-btn">Generate Token</button>
                             <button type="button" class="btn-secondary btn-block" id="token-regenerate-btn" disabled>Regenerate Token</button>
-                            <button type="button" class="btn-danger btn-block" id="token-revoke-btn" disabled>Revoke Token</button>
                         </div>
                         <p class="settings-data-note">Generate a token to authenticate the Compendium Capture browser extension. Keep it secret — anyone with this token can save captures to your account.</p>
                     </div>
@@ -412,6 +412,7 @@
             // Pre-generate API token endpoint URLs
             const API_TOKEN_URLS = {
                 status: "{{ url_for('api_token_status') }}",
+                view: "{{ url_for('api_token_view') }}",
                 generate: "{{ url_for('api_token_generate') }}",
                 regenerate: "{{ url_for('api_token_regenerate') }}",
                 revoke: "{{ url_for('api_token_revoke') }}"
@@ -428,10 +429,24 @@
                     const revokeBtn = document.getElementById('token-revoke-btn');
                     
                     if (data.has_token) {
-                        // We only show the token once on generation; stored token is not retrievable
-                        input.placeholder = 'Token generated (hidden for security)';
-                        input.value = '';
-                        copyBtn.disabled = true;
+                        // Fetch the actual token for display
+                        try {
+                            const viewResp = await fetch(API_TOKEN_URLS.view, { method: 'POST' });
+                            const viewData = await viewResp.json();
+                            if (viewData.ok) {
+                                input.value = viewData.token;
+                                input.placeholder = '';
+                                copyBtn.disabled = false;
+                            } else {
+                                input.placeholder = 'Token exists (click to view)';
+                                input.value = '';
+                                copyBtn.disabled = true;
+                            }
+                        } catch (e) {
+                            input.placeholder = 'Token exists (click to view)';
+                            input.value = '';
+                            copyBtn.disabled = true;
+                        }
                         genBtn.disabled = true;
                         regenBtn.disabled = false;
                         revokeBtn.disabled = false;
@@ -467,11 +482,13 @@
                     if (data.ok) {
                         if (action === 'revoke') {
                             flashMessage('Token revoked.', 'success');
+                            tokenInput.value = '';
                         } else {
-                            // Show the new token once
+                            // Show the new token directly
                             tokenInput.value = data.token;
                             tokenInput.select();
-                            flashMessage('Token generated! Copy it now — it won\'t be shown again.', 'success');
+                            flashMessage('Token generated! Copy it now.', 'success');
+                            copyBtn.disabled = false;
                         }
                         await loadToken();
                     } else {

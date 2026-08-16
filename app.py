@@ -16,40 +16,49 @@ from cryptography.fernet import Fernet
 
 # Repo / data directory resolution. DATA_DIR is a sibling of this repo
 # (compendium-data/) kept OUT of git so code stays separate from sensitive,
-# user-generated, and server-generated data.
+# user-generated, and server-generated data. The setup_and_run.sh script
+# creates it (and its subfolders) idempotently before the app starts.
 REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get(
     'COMPANION_DATA_DIR',
     os.path.join(os.path.dirname(REPO_DIR), 'compendium-data'),
 )
 
+# The app REQUIRES DATA_DIR to exist — it holds the database, uploads, logs,
+# and the configs/ folder (secrets/keys). Fail fast rather than silently
+# running without persistence or encryption. setup_and_run.sh guarantees this.
+if not DATA_DIR or not os.path.isdir(DATA_DIR):
+    raise RuntimeError(
+        f"DATA_DIR not found: {DATA_DIR!r}. Run setup_and_run.sh once to "
+        f"create the runtime data folders before starting the app."
+    )
+
+# Configs folder: app secrets/keys, kept distinct from user data (db/uploads)
+# and server logs (logs). Lives under DATA_DIR, never in the git repo.
+CONFIG_DIR = os.path.join(DATA_DIR, 'configs')
+os.makedirs(CONFIG_DIR, exist_ok=True)
+
 # Encryption key for API tokens.
 # Resolution order (first match wins):
 #   1. TOKEN_ENCRYPTION_KEY env var (e.g. set by the WSGI/host config)
-#   2. compendium-data/token_key.txt  (untracked, lives outside this repo)
-#   3. generate a throwaway key at startup (dev only — tokens become undecryptable
-#      after a restart, so never rely on this in production)
+#   2. compendium-data/configs/token_key.env  (untracked, outside repo)
+#      auto-generated on first run if absent; survives restarts so stored
+#      tokens stay decryptable.
 TOKEN_ENCRYPTION_KEY = os.environ.get('TOKEN_ENCRYPTION_KEY')
-if not TOKEN_ENCRYPTION_KEY and DATA_DIR:
-    _key_path = os.path.join(DATA_DIR, 'token_key.txt')
-    try:
-        if os.path.exists(_key_path):
-            with open(_key_path, 'r') as _f:
-                TOKEN_ENCRYPTION_KEY = _f.read().strip()
-        else:
-            TOKEN_ENCRYPTION_KEY = Fernet.generate_key().decode()
-            with open(_key_path, 'w') as _f:
-                _f.write(TOKEN_ENCRYPTION_KEY)
-            os.chmod(_key_path, 0o600)
-            print(f"Generated API token encryption key at {_key_path}")
-    except OSError as _e:
-        print(f"WARNING: could not read/write token key file ({_e}); generating in-memory key.")
+if not TOKEN_ENCRYPTION_KEY:
+    _key_path = os.path.join(CONFIG_DIR, 'token_key.env')
+    if os.path.exists(_key_path):
+        with open(_key_path, 'r') as _f:
+            TOKEN_ENCRYPTION_KEY = _f.read().strip()
+    else:
         TOKEN_ENCRYPTION_KEY = Fernet.generate_key().decode()
+        with open(_key_path, 'w') as _f:
+            _f.write(TOKEN_ENCRYPTION_KEY)
+        os.chmod(_key_path, 0o600)
+        print(f"Generated API token encryption key at {_key_path}")
 
 if not TOKEN_ENCRYPTION_KEY:
-    # Last-resort fallback (no DATA_DIR available)
-    TOKEN_ENCRYPTION_KEY = Fernet.generate_key().decode()
-    print("WARNING: Using generated in-memory encryption key for API tokens.")
+    raise RuntimeError("Failed to obtain TOKEN_ENCRYPTION_KEY; cannot start.")
 
 token_cipher = Fernet(TOKEN_ENCRYPTION_KEY)
 

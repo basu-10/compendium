@@ -12,6 +12,10 @@ REQUIREMENTS="$REPO_DIR/requirements.txt"
 APP_FILE="$REPO_DIR/app.py"
 
 mkdir -p "$DATA_DIR"
+# configs/ holds app secrets/keys (e.g. token encryption key), kept distinct
+# from user data (db/uploads) and server logs. Created idempotently.
+mkdir -p "$DATA_DIR/configs"
+mkdir -p "$DATA_DIR/uploads"
 
 if [ ! -d "$VENV_DIR" ]; then
     echo "Creating virtual environment at $VENV_DIR..."
